@@ -1,0 +1,65 @@
+{
+  "num_speakers": 3,
+  "num_mic_positions": 4,
+  "sample_rate": 96000,
+  "output_dir": "mimo_fir_output_ir",
+  "output_format": "both",
+  "ir_length_samples": 65536,
+  "filter_taps": 65536,
+  "target_delay_ms": 180.0,
+  "max_boost_db": 12.0,
+  "max_cut_db": 18.0,
+  "mic_weights": [1.0, 0.75, 0.75, 0.5],
+  "speaker_profiles": {
+    "0": {
+      "name": "Sub L",
+      "min_hz": 10.0,
+      "max_hz": 120.0,
+      "transition_hz": 12.0
+    },
+    "1": {
+      "name": "L",
+      "min_hz": 40.0,
+      "max_hz": 20000.0,
+      "transition_hz": 24.0
+    },
+    "2": {
+      "name": "R",
+      "min_hz": 40.0,
+      "max_hz": 20000.0,
+      "transition_hz": 24.0
+    }
+  },
+  "target_curve_points_db": [
+    [10.0, -6.0],
+    [20.0, -3.0],
+    [40.0, 0.0],
+    [20000.0, 0.0]
+  ],
+  "target_mic_matrix": [
+    [1.0, 1.0, 1.0],
+    [1.0, 1.0, 1.0],
+    [1.0, 1.0, 1.0],
+    [1.0, 1.0, 1.0]
+  ],
+  "auto_target_level": true,
+  "reference_band_hz": [20.0, 200.0],
+  "authority_floor_db": -30.0,
+  "profile_disable_threshold": 0.0001,
+  "enforce_row_sum_gain_cap": true,
+  "fade_out_samples": 2048,
+  "measurements": [
+    {"speaker": 0, "mic": 0, "path": "ir/Sub L S3A_postMSO_MLP.wav"},
+    {"speaker": 1, "mic": 0, "path": "ir/L S3A_postMSO_MLP.wav"},
+    {"speaker": 2, "mic": 0, "path": "ir/R S3A_postMSO_MLP.wav"},
+    {"speaker": 0, "mic": 1, "path": "ir/Sub L S3A_postMSO_LP.wav"},
+    {"speaker": 1, "mic": 1, "path": "ir/L S3A_postMSO_LP.wav"},
+    {"speaker": 2, "mic": 1, "path": "ir/R S3A_postMSO_LP.wav"},
+    {"speaker": 0, "mic": 2, "path": "ir/Sub L S3A_postMSO_RP.wav"},
+    {"speaker": 1, "mic": 2, "path": "ir/L S3A_postMSO_RP.wav"},
+    {"speaker": 2, "mic": 2, "path": "ir/R S3A_postMSO_RP.wav"},
+    {"speaker": 0, "mic": 3, "path": "ir/Sub L S3A_postMSO_BP.wav"},
+    {"speaker": 1, "mic": 3, "path": "ir/L S3A_postMSO_BP.wav"},
+    {"speaker": 2, "mic": 3, "path": "ir/R S3A_postMSO_BP.wav"}
+  ]
+}
