@@ -30,6 +30,50 @@ Run the synthetic smoke test without REW files:
 python3 mimo_room_correction.py --smoke-test --output-dir /tmp/mimo_room_correction_smoke
 ```
 
+## REW Measurement and Export Workflow
+
+The solver inverts the measured transfer matrix at full FFT-bin resolution (no internal spectral smoothing) and depends on phase coherence between all measurements. The realism of the output is therefore decided almost entirely by how the impulse responses are measured and exported in REW. Follow these steps:
+
+### 1. Timing reference (non-negotiable)
+
+- Enable an **acoustic timing reference** (or soundcard loopback) in REW: Preferences -> Analysis -> "Use acoustic timing reference".
+- Use the **same reference speaker** for all speaker/mic measurements in the session.
+- Do **not** let REW set `t=0` at each IR peak independently. The MIMO solve sums speakers at each mic position, so the relative time-of-flight between speakers and across mic positions must be physically correct. Per-measurement peak alignment destroys this and the matrix solution becomes meaningless.
+
+### 2. Measurement hygiene
+
+- Keep output level and mic gain identical for every sweep; never change levels mid-session.
+- Load the microphone calibration file before measuring (it is baked into the export).
+- Use long sweeps (256k-512k at 96 kHz) with 2+ repetitions for SNR. The solver will happily "correct" low-frequency noise as if it were real room response, especially near the `authority_floor_db` limit.
+
+### 3. Windowing in REW (this is your smoothing)
+
+REW's fractional-octave smoothing only affects the displayed magnitude trace, **not** the exported impulse response. The time-domain equivalent is windowing, and this script applies none, so do it in REW before export:
+
+- Apply a **frequency-dependent window (FDW)** of roughly **6-10 cycles** (IR Windows -> "Add frequency dependent window"). This is equivalent to ~1/6-1/10 octave complex smoothing: it discards late, position-dependent reflections at mid/high frequencies while preserving full modal detail at low frequencies. Without it, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position.
+- Left window: short (about 1 ms Tukey) ahead of the reference.
+- Right window: long enough for low-frequency resolution (for example 65536 samples at 96 kHz is 683 ms, matching `ir_length_samples`).
+- Export with the windows applied.
+
+### 4. Export settings
+
+File -> Export -> "Export impulse response as WAV":
+
+- **32-bit float**, mono.
+- Native measurement sample rate (no resampling); it must match `sample_rate` in the config.
+- **No normalisation.** The `auto_target_level` and acoustic-authority logic depend on consistent relative levels between speakers and mic positions.
+- Same export length for all files.
+- Windowed data (from step 3).
+
+### 5. Verify after applying filters
+
+Load the generated filters into CamillaDSP, then re-measure all mic positions in REW with the same timing reference and compare against the predicted target. Also watch the wrap-energy warning in `diagnostics.json`; if it fires, increase `fft_size` or `target_delay_ms`.
+
+### Recommended config restraint
+
+- Full-matrix correction of mains up to 20 kHz across spaced mic positions is not physically meaningful; high-frequency phase decorrelates over centimetres. Consider lowering `max_hz` for the main speakers to the Schroeder region (~300-500 Hz) so the matrix only handles the modal range, or rely on the FDW from step 3 to suppress high-frequency artifacts.
+- Start with `max_boost_db` of 6-9 dB until verification measurements confirm the correction is benign.
+
 ## Measurement Naming
 
 Use either an explicit `measurements` list or a pattern:
@@ -55,5 +99,12 @@ Set `output_format` to `wav` or `both` when using the generated CamillaDSP snipp
 ## Important DSP Notes
 
 Choose `target_delay_ms` large enough to make the inverse causal. If diagnostics warn about wrap-point energy, increase `target_delay_ms`, `fft_size`, or `filter_taps`.
+
+Two complex-smoothing options bound how surgical the correction is allowed to be:
+
+- `h_smoothing_fraction`: fractional-octave complex smoothing of the measured room matrix `H(f)` before solving (for example `6.0` for 1/6 octave). Each measurement is de-rotated by its direct-sound arrival time before smoothing, so relative phase between speakers and mic positions is preserved. This is the in-script equivalent of REW's frequency-dependent window and prevents the solver from inverting narrow, position-specific features.
+- `x_smoothing_fraction`: the same smoothing applied to the solved filter matrix `X(f)` (de-rotated by `target_delay_ms`). The solver creates sharp spectral transitions at speaker band edges and regularization boundaries that can ring for seconds in the time domain; smoothing the solution bounds the Q of every filter feature so the FIR energy decays well within `filter_taps`. If diagnostics warn about wrap-point energy even with a large `fft_size`, enable this.
+
+Both default to `0.0` (off). `1/6` octave is a reasonable starting point for either.
 
 Small-speaker protection is implemented twice: the solver removes each speaker from the optimization outside its `speaker_profiles` band, then applies gain caps after solving. Because any finite FIR has transition leakage, use realistic transition bands and sufficiently long taps for low-frequency control.
