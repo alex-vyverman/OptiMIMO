@@ -1,6 +1,6 @@
 # MIMO Room Correction FIR Matrix Solver
 
-This workspace contains a foundational Python pipeline for a Dirac ART/CABS-style active room-correction matrix. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
+This workspace contains a foundational Python pipeline for an active room-correction matrix with support speakers. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
 
 At each frequency bin, the solver minimizes:
 
@@ -122,5 +122,23 @@ By default the solver produces `N x N` filters with the same target for every in
 ```
 
 Here input `0` (left) may use the three subs plus the left main, and input `1` (right) the three subs plus the right main. Disallowed speaker/input pairs are removed from the optimization (not just zeroed afterwards), so the remaining speakers are solved knowing they cannot rely on the blocked ones. The mains stay strictly stereo while all subs support both channels in their band — mono bass, stereo everything else. Blocked pairs are still exported as all-zero FIRs to keep the matrix topology regular.
+
+## Target Modes (`target_mode`)
+
+- `"flat"` (default): every input is asked to produce the house curve with one identical pure delay at all mic positions. Simple, but physically impossible for spaced mics — the solver wastes effort fighting propagation geometry, and the linear-phase demand risks pre-ringing.
+- `"anchored"`: each input's target is derived from (anchored to) its **primary speaker's** measured response. Per mic position, the target keeps the primary's natural arrival time and broad phase (preserving ITD) and its broadband level relative to the other positions (preserving ILD), while the magnitude follows the house curve. The solver then corrects only true deviations (modes, resonances, SBIR), and support speakers are steered to cancel the difference between what the primary does and what it should do at each position.
+
+Anchored mode configuration:
+
+```json
+"target_mode": "anchored",
+"input_primary_speaker": {"0": 3, "1": 4},
+"anchor_phase_smoothing_fraction": 1.0,
+"anchor_level_floor_db": -30.0
+```
+
+- `input_primary_speaker`: the speaker each input "belongs" to (here: left main for input 0, right main for input 1).
+- `anchor_phase_smoothing_fraction`: fractional-octave complex smoothing applied to the primary's measured response before extracting the target phase/levels (`1.0` = one octave). Heavy smoothing is intentional — it keeps geometry while excluding the room defects being corrected from the target itself.
+- `anchor_level_floor_db`: where the primary's smoothed response falls below this level relative to its in-band average, the target magnitude shrinks toward zero, so the system never demands output where the primary has no authority (for example below the speaker's rolloff).
 
 Small-speaker protection is implemented twice: the solver removes each speaker from the optimization outside its `speaker_profiles` band, then applies gain caps after solving. Because any finite FIR has transition leakage, use realistic transition bands and sufficiently long taps for low-frequency control.

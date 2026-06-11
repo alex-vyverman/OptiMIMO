@@ -5,6 +5,13 @@
     "0": [0, 1, 2, 3],
     "1": [0, 1, 2, 4]
   },
+  "target_mode": "anchored",
+  "input_primary_speaker": {
+    "0": 3,
+    "1": 4
+  },
+  "anchor_phase_smoothing_fraction": 1.0,
+  "anchor_level_floor_db": -30.0,
   "num_mic_positions": 12,
   "sample_rate": 96000,
   "output_dir": "mimo_fir_output_ir",
