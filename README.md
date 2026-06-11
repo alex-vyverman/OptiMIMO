@@ -94,7 +94,9 @@ N input channels -> N*N branch channels -> one FIR per branch -> summed to N out
 
 For example, `fir_o02_i00.wav` means input channel `0` feeding physical output speaker `2`.
 
-Set `output_format` to `wav` or `both` when using the generated CamillaDSP snippet. Text coefficient export is useful for inspection or import into other tools, but this snippet references WAV convolution filters.
+By default the snippet references WAV convolution filters (`output_format` must be `wav` or `both`).
+
+**CamillaDSP GUI import bug workaround:** current camillagui-backend crashes with `KeyError: 'format'` when importing any config containing `Conv`/`Wav` filters (its legacy-config migration reads the `format` parameter unconditionally, but `Wav` convolvers don't have one). The GUI then reports "Could not extract filters from file". Set `"camilladsp_conv_type": "raw"` to emit `Conv`/`Raw` filters with `format: TEXT` referencing the exported `.txt` coefficients instead — these import cleanly. This requires `output_format` set to `txt` or `both`. Once the upstream bug is fixed, switch back to `"wav"` (smaller files, faster loading).
 
 ## Important DSP Notes
 
@@ -106,5 +108,19 @@ Two complex-smoothing options bound how surgical the correction is allowed to be
 - `x_smoothing_fraction`: the same smoothing applied to the solved filter matrix `X(f)` (de-rotated by `target_delay_ms`). The solver creates sharp spectral transitions at speaker band edges and regularization boundaries that can ring for seconds in the time domain; smoothing the solution bounds the Q of every filter feature so the FIR energy decays well within `filter_taps`. If diagnostics warn about wrap-point energy even with a large `fft_size`, enable this.
 
 Both default to `0.0` (off). `1/6` octave is a reasonable starting point for either.
+
+## Input Routing (`num_inputs` and `input_speakers`)
+
+By default the solver produces `N x N` filters with the same target for every input channel, which makes every input column identical — and a multichannel system would collapse stereo to mono. For a real stereo system, set `num_inputs` and restrict which speakers may reproduce each input:
+
+```json
+"num_inputs": 2,
+"input_speakers": {
+  "0": [0, 1, 2, 3],
+  "1": [0, 1, 2, 4]
+}
+```
+
+Here input `0` (left) may use the three subs plus the left main, and input `1` (right) the three subs plus the right main. Disallowed speaker/input pairs are removed from the optimization (not just zeroed afterwards), so the remaining speakers are solved knowing they cannot rely on the blocked ones. The mains stay strictly stereo while all subs support both channels in their band — mono bass, stereo everything else. Blocked pairs are still exported as all-zero FIRs to keep the matrix topology regular.
 
 Small-speaker protection is implemented twice: the solver removes each speaker from the optimization outside its `speaker_profiles` band, then applies gain caps after solving. Because any finite FIR has transition leakage, use realistic transition bands and sufficiently long taps for low-frequency control.

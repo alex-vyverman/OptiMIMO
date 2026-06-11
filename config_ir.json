@@ -1,9 +1,15 @@
 {
   "num_speakers": 5,
+  "num_inputs": 2,
+  "input_speakers": {
+    "0": [0, 1, 2, 3],
+    "1": [0, 1, 2, 4]
+  },
   "num_mic_positions": 12,
   "sample_rate": 96000,
   "output_dir": "mimo_fir_output_ir",
   "output_format": "both",
+  "camilladsp_conv_type": "raw",
   "ir_length_samples": 65536,
   "filter_taps": 65536,
   "fft_size": 262144,

@@ -633,6 +633,45 @@ def build_target_matrix(
     return np.asarray(y_freq, dtype=np.complex128), target_level
 
 
+def parse_input_speaker_mask(
+    config: Mapping[str, Any], num_speakers: int, num_inputs: int
+) -> np.ndarray:
+    """Return a boolean (speakers x inputs) mask of allowed speaker/input pairs.
+
+    Configured via `input_speakers`, mapping each input channel to the list of
+    speaker indices allowed to reproduce it, for example:
+
+        "input_speakers": {"0": [0, 1, 2, 3], "1": [0, 1, 2, 4]}
+
+    Absent config allows every speaker for every input (full matrix).
+    """
+    raw = config.get("input_speakers")
+    if raw is None:
+        return np.ones((num_speakers, num_inputs), dtype=bool)
+
+    mask = np.zeros((num_speakers, num_inputs), dtype=bool)
+    for input_channel in range(num_inputs):
+        if isinstance(raw, AbcMapping):
+            entry = raw.get(str(input_channel), raw.get(input_channel))
+        elif isinstance(raw, AbcSequence) and not isinstance(raw, (str, bytes)):
+            entry = raw[input_channel] if input_channel < len(raw) else None
+        else:
+            raise ValueError("input_speakers must be a mapping or list of speaker-index lists.")
+        if entry is None:
+            raise ValueError(f"input_speakers is missing an entry for input {input_channel}.")
+        speakers = [int(value) for value in entry]
+        if not speakers:
+            raise ValueError(f"input_speakers entry for input {input_channel} is empty.")
+        for speaker in speakers:
+            if speaker < 0 or speaker >= num_speakers:
+                raise ValueError(
+                    f"input_speakers entry for input {input_channel} references "
+                    f"invalid speaker index {speaker}."
+                )
+            mask[speaker, input_channel] = True
+    return mask
+
+
 def cap_complex_magnitude(values: np.ndarray, max_magnitude: float) -> np.ndarray:
     if max_magnitude <= 0.0:
         raise ValueError("max_magnitude must be positive.")
@@ -708,13 +747,34 @@ def solve_frequency_domain_filters(
     beta[disabled] = np.maximum(beta[disabled], reference_power * profile_disable_penalty)
 
     gram = np.matmul(h_weighted.conj().transpose(0, 2, 1), h_weighted)
-    system = gram + np.eye(num_speakers)[None, ...] * beta[..., None]
     rhs = np.matmul(h_weighted.conj().transpose(0, 2, 1), y_weighted)
+    identity = np.eye(num_speakers)[None, ...]
 
-    try:
-        z_freq = np.linalg.solve(system, rhs)
-    except np.linalg.LinAlgError:
-        z_freq = np.linalg.lstsq(system, rhs, rcond=None)[0]
+    input_mask = parse_input_speaker_mask(config, num_speakers, num_inputs)
+
+    def regularized_solve(system: np.ndarray, rhs_block: np.ndarray) -> np.ndarray:
+        try:
+            return np.linalg.solve(system, rhs_block)
+        except np.linalg.LinAlgError:
+            return np.linalg.lstsq(system, rhs_block, rcond=None)[0]
+
+    if np.all(input_mask):
+        system = gram + identity * beta[..., None]
+        z_freq = regularized_solve(system, rhs)
+    else:
+        # Each input channel may only use its allowed speakers, so the
+        # regularization (and hence the system matrix) differs per input.
+        z_freq = np.empty((num_freqs, num_speakers, num_inputs), dtype=np.complex128)
+        for input_channel in range(num_inputs):
+            blocked = ~input_mask[:, input_channel]
+            beta_input = beta.copy()
+            beta_input[:, blocked] = np.maximum(
+                beta_input[:, blocked], reference_power * profile_disable_penalty
+            )
+            system = gram + identity * beta_input[..., None]
+            solved_column = regularized_solve(system, rhs[:, :, input_channel : input_channel + 1])
+            solved_column[:, blocked, :] = 0.0
+            z_freq[:, :, input_channel] = solved_column[..., 0]
 
     solved = profile[..., None] * z_freq
     solved = cap_complex_magnitude(solved, max_boost)
@@ -849,15 +909,20 @@ def generate_camilladsp_yaml(
 ) -> str:
     prefix = str(config.get("camilladsp_filter_path_prefix", ""))
     use_absolute = bool(config.get("camilladsp_absolute_paths", False))
+    conv_type = str(config.get("camilladsp_conv_type", "wav")).lower()
+    if conv_type not in {"wav", "raw"}:
+        raise ValueError("camilladsp_conv_type must be 'wav' or 'raw'.")
+    path_key = "wav" if conv_type == "wav" else "txt"
     branch_count = num_outputs * num_inputs
 
     def filter_filename(output_channel: int, input_channel: int) -> str:
         item = filter_paths[(output_channel, input_channel)]
-        path = item.get("wav")
+        path = item.get(path_key)
         if path is None:
+            needed = "'wav'" if path_key == "wav" else "'txt'"
             raise ValueError(
-                "CamillaDSP YAML generation requires WAV FIR files. "
-                "Set output_format to 'wav' or 'both'."
+                f"CamillaDSP YAML generation with camilladsp_conv_type={conv_type!r} "
+                f"requires {needed} FIR files. Set output_format to {needed} or 'both'."
             )
         if use_absolute:
             return str(path.resolve())
@@ -878,8 +943,13 @@ def generate_camilladsp_yaml(
             lines.append(f"  {name}:")
             lines.append("    type: Conv")
             lines.append("    parameters:")
-            lines.append("      type: Wav")
-            lines.append(f"      filename: {yaml_quote(filter_filename(output_channel, input_channel))}")
+            if conv_type == "wav":
+                lines.append("      type: Wav")
+                lines.append(f"      filename: {yaml_quote(filter_filename(output_channel, input_channel))}")
+            else:
+                lines.append("      type: Raw")
+                lines.append(f"      filename: {yaml_quote(filter_filename(output_channel, input_channel))}")
+                lines.append("      format: TEXT")
 
     lines.append("mixers:")
     lines.append("  fir_matrix_expand:")
@@ -918,7 +988,7 @@ def generate_camilladsp_yaml(
             branch = output_channel * num_inputs + input_channel
             name = f"fir_o{output_channel:02d}_i{input_channel:02d}"
             lines.append("  - type: Filter")
-            lines.append(f"    channel: {branch}")
+            lines.append(f"    channels: [{branch}]")
             lines.append("    names:")
             lines.append(f"      - {name}")
     lines.append("  - type: Mixer")
