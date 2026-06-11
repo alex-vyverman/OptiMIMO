@@ -115,38 +115,52 @@ def read_config(path: Path) -> dict[str, Any]:
 
 
 def write_example_config(path: Path) -> None:
+    """Write an example configuration for a stereo system with three support subs.
+
+    Every parameter is documented in the Configuration Reference section of
+    the README.
+    """
     example = {
-        "num_speakers": 4,
+        "num_speakers": 5,
+        "num_inputs": 2,
         "num_mic_positions": 4,
-        "sample_rate": 48000,
+        "sample_rate": 96000,
         "measurement_pattern": "measurements/spk_{speaker:02d}_mic_{mic:02d}.wav",
         "output_dir": "output_firs",
         "output_format": "both",
-        "filter_taps": 8192,
-        "target_delay_ms": 40.0,
+        "camilladsp_conv_type": "raw",
+        "ir_length_samples": 65536,
+        "filter_taps": 65536,
+        "fft_size": 262144,
+        "target_delay_ms": 100.0,
         "max_boost_db": 9.0,
         "max_cut_db": 18.0,
-        "mic_weights": [1.0, 1.0, 0.6, 0.6],
+        "mic_weights": [1.0, 0.75, 0.75, 0.5],
         "speaker_profiles": {
-            "0": {"name": "Sub L", "min_hz": 10.0, "max_hz": 120.0, "transition_hz": 12.0},
-            "1": {"name": "Sub R", "min_hz": 10.0, "max_hz": 120.0, "transition_hz": 12.0},
-            "2": {"name": "Main L", "min_hz": 80.0, "max_hz": 20000.0, "transition_hz": 24.0},
-            "3": {"name": "Main R", "min_hz": 80.0, "max_hz": 20000.0, "transition_hz": 24.0},
+            "0": {"name": "Sub L", "min_hz": 40.0, "max_hz": 120.0, "transition_hz": 12.0},
+            "1": {"name": "Sub M", "min_hz": 17.0, "max_hz": 120.0, "transition_hz": 8.0},
+            "2": {"name": "Sub R", "min_hz": 40.0, "max_hz": 120.0, "transition_hz": 12.0},
+            "3": {"name": "Main L", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
+            "4": {"name": "Main R", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
         },
-        "target_curve_points_db": [[20.0, -3.0], [80.0, 0.0], [20000.0, 0.0]],
-        "target_mic_matrix": [
-            [1.0, 1.0, 1.0, 1.0],
-            [1.0, 1.0, 1.0, 1.0],
-            [0.75, 0.75, 0.75, 0.75],
-            [0.75, 0.75, 0.75, 0.75],
-        ],
+        "input_speakers": {
+            "0": [0, 1, 2, 3],
+            "1": [0, 1, 2, 4],
+        },
+        "target_mode": "anchored",
+        "input_primary_speaker": {"0": 3, "1": 4},
+        "anchor_phase_smoothing_fraction": 1.0,
+        "anchor_level_floor_db": -30.0,
+        "target_curve_points_db": [[10.0, -12.0], [17.0, -3.0], [20.0, 0.0], [20000.0, 0.0]],
         "auto_target_level": True,
         "reference_band_hz": [20.0, 200.0],
+        "h_smoothing_fraction": 6.0,
+        "x_smoothing_fraction": 6.0,
         "authority_floor_db": -30.0,
         "profile_disable_threshold": 1.0e-4,
         "enforce_row_sum_gain_cap": True,
         "enforce_diagonal_cut_floor": False,
-        "fade_out_samples": 512,
+        "fade_out_samples": 2048,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:

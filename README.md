@@ -84,6 +84,90 @@ Use either an explicit `measurements` list or a pattern:
 
 The pattern supports zero-based `{speaker}`, `{mic}` and one-based `{speaker1}`, `{mic1}` placeholders.
 
+## Configuration Reference
+
+An up-to-date example lives in `example_config.json` (regenerate any time with `--write-example-config`). All parameters by group:
+
+### Dimensions and measurements
+
+| Parameter | Default | Description |
+|---|---|---|
+| `num_speakers` | required | Number of physical output channels (N). Speaker indices used everywhere else refer to this ordering. |
+| `num_mic_positions` | required | Number of microphone positions (M) in the measurement grid. |
+| `num_inputs` | `num_speakers` | Number of input channels (K), e.g. `2` for stereo sources. Produces N x K FIR filters. |
+| `sample_rate` | from WAVs | Expected sample rate. Optional for WAV input (read from files, mismatches rejected); required for text IRs without a time column. |
+| `measurements` | — | Explicit list of `{speaker, mic, path}` entries, one IR per speaker/mic pair. |
+| `measurement_pattern` | — | Alternative to `measurements`: filename template such as `"measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"`. |
+| `wav_channel` | `0` | Channel to read from multichannel measurement WAVs. |
+| `ir_crop_start_sample` / `ir_crop_start_ms` | `0` | Discard this much of the start of every IR before processing (both add together). Use only if all exports share a common dead-time; never crop per-measurement, that destroys relative timing. |
+| `ir_length_samples` | longest IR | Length to which all IRs are cropped/zero-padded. Sets the low-frequency resolution of the measurement data. |
+
+### Filter dimensions
+
+| Parameter | Default | Description |
+|---|---|---|
+| `filter_taps` | `8192` | Length of the exported FIR filters. Determines how long a correction can ring; 65536 taps at 96 kHz is 683 ms. |
+| `fft_size` | auto | Solve resolution; must be at least `ir_length + filter_taps - 1` (auto picks the next power of two). Larger values give the inverse more time to decay before the circular wrap point. |
+| `target_delay_ms` | `40.0` | Bulk delay built into the target so the inverse can be causal (becomes system latency). Flat mode needs generous values (~180 ms); anchored mode tolerates less (~80–100 ms) because its phase target is mostly causal. |
+| `fade_out_samples` | `0` | Hann fade applied to the FIR tail to avoid a truncation discontinuity. |
+
+### Speaker protection
+
+| Parameter | Default | Description |
+|---|---|---|
+| `speaker_profiles` | required | Per speaker: `name`, `min_hz`/`max_hz` (safe operating band — the speaker is removed from the optimization outside it), `transition_hz` (raised-sine ramp width inside the band edges), `effort_penalty_db` (optional extra regularization to make the solver prefer other speakers). |
+| `max_boost_db` | `9.0` | Hard cap on filter gain, applied per crosspoint and (optionally) per speaker row sum, plus once more after FIR truncation. |
+| `max_cut_db` | `120` | Floor for the diagonal filter magnitude; only enforced when `enforce_diagonal_cut_floor` is true. |
+| `enforce_row_sum_gain_cap` | `true` | Cap the *summed* drive each physical speaker can receive across all inputs, not just each individual filter. |
+| `enforce_diagonal_cut_floor` | `false` | Prevent the direct input-to-primary path from being cut below `max_cut_db`. |
+| `enforce_final_gain_cap` | `true` | Re-check and rescale gains after FIR truncation and windowing. |
+
+### Target
+
+| Parameter | Default | Description |
+|---|---|---|
+| `target_mode` | `"flat"` | `"flat"` = identical house-curve/pure-delay target at all mics; `"anchored"` = target derived from each input's primary speaker (see Target Modes section). |
+| `target_curve_points_db` | flat 0 dB | House curve as `[freq_hz, dB]` breakpoints, interpolated on a log-frequency axis. |
+| `input_primary_speaker` | — | Anchored mode: the speaker each input belongs to, e.g. `{"0": 3, "1": 4}`. |
+| `anchor_phase_smoothing_fraction` | `1.0` | Anchored mode: fractional-octave complex smoothing of the primary's response before extracting target phase/levels (`1.0` = one octave). Heavy on purpose — keeps geometry, excludes the defects being corrected. |
+| `anchor_level_floor_db` | `-30.0` | Anchored mode: below this level (relative to the primary's in-band average) the target magnitude shrinks toward zero, so nothing is demanded where the primary has no output. |
+| `target_mic_matrix` / `target_mic_gains` | all ones | Flat mode only: per-mic (x per-input) scalar target gains. |
+| `auto_target_level` | `true` | Scale the target from the median measured in-band response power, so results do not depend on absolute REW export level. |
+| `target_level_linear` | — | Explicit linear target level, overrides `auto_target_level`. |
+| `reference_band_hz` | `[20, 200]` | Band used for the auto level, the regularization reference power, and anchored-mode level estimation. |
+
+### Routing
+
+| Parameter | Default | Description |
+|---|---|---|
+| `input_speakers` | all | Allowed speakers per input, e.g. `{"0": [0,1,2,3], "1": [0,1,2,4]}`. Blocked pairs are removed from the optimization and exported as all-zero FIRs. |
+| `mic_weights` | all ones | Relative importance of each mic position in the least-squares error (listening position highest). |
+
+### Smoothing and regularization
+
+| Parameter | Default | Description |
+|---|---|---|
+| `h_smoothing_fraction` | `0` (off) | Fractional-octave complex smoothing of the measured room matrix before solving (`6.0` = 1/6 octave). In-script equivalent of REW's frequency-dependent window. |
+| `x_smoothing_fraction` | `0` (off) | Same smoothing applied to the solved filters; bounds the Q of every filter feature so FIRs decay well within `filter_taps`. |
+| `base_regularization` | auto | Base Tikhonov term. Auto derives it from the reference power and `max_boost_db` so the unconstrained inverse naturally respects the boost cap. |
+| `authority_floor_db` | `-30.0` | Speakers whose measured in-band response (acoustic authority) falls below this relative level get progressively stronger regularization instead of being boosted into inaudibility. |
+| `null_regularization_strength` | `1.0` | Multiplier on the authority-floor penalty. |
+| `profile_transition_penalty` | `10.0` | How quickly regularization grows inside a speaker's band-edge transition ramps. |
+| `profile_disable_threshold` | `1e-4` | Profile weight below which a speaker counts as fully disabled at that frequency. |
+| `profile_disable_penalty` | `1e12` | Regularization applied to disabled speaker/frequency (and blocked speaker/input) combinations. |
+
+### Output
+
+| Parameter | Default | Description |
+|---|---|---|
+| `output_dir` | `"mimo_fir_output"` | Destination for FIRs, YAML snippet and `diagnostics.json`. |
+| `output_format` | `"wav"` | `wav`, `txt`, or `both`. |
+| `camilladsp_conv_type` | `"wav"` | `wav` = Conv/Wav filters; `raw` = Conv/Raw with `format: TEXT` (workaround for the camillagui import bug, needs txt output). |
+| `camilladsp_filter_path_prefix` | `""` | Prepended to coefficient filenames in the YAML — set to the coefficient directory on the DSP host. |
+| `camilladsp_absolute_paths` | `false` | Reference coefficients by absolute local path instead. |
+| `remove_denormals` | `true` | Zero out sub-1e-24 coefficients to avoid denormal CPU penalties. |
+| `wrap_energy_warning_ratio` | `1e-3` | Threshold for the circular-wrap diagnostic warning. |
+
 ## CamillaDSP Topology
 
 CamillaDSP does not apply a unique FIR per matrix-mixer source/destination crosspoint in one simple gain mixer, so the generated snippet uses this topology:
