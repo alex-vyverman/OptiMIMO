@@ -30,6 +30,33 @@ Run the synthetic smoke test without REW files:
 python3 mimo_room_correction.py --smoke-test --output-dir /tmp/mimo_room_correction_smoke
 ```
 
+## GUI
+
+A local browser-based GUI (NiceGUI) covers the full workflow: config editing, measurement assignment with validation, and solving with progress, cancellation, diagnostics, and export.
+
+```bash
+python3 -m pip install -r requirements.txt   # includes nicegui
+python3 -m mimo_acoustic.gui.app --config config_ir.json
+```
+
+This opens `http://localhost:8080` (use `--port` and `--no-browser` to change behavior; `pip install -e .` also provides a `mimo-gui` command). Tabs:
+
+- **Config** — all solver parameters grouped as in the Configuration Reference, with load/save of the same JSON files the CLI uses
+- **Measurements** — speaker x mic file grid with a folder-assign helper and per-file validation (existence, sample rate, length)
+- **Run** — pre-flight config validation, solve with stage progress and cancel, diagnostics summary, FIR/YAML export
+- **Analysis** — interactive plots from the last solve: measured responses per speaker across mics, predicted corrected response vs target per mic with a per-band residual-error table, filter magnitudes per crosspoint, and impulse envelopes with a target-delay marker and pre-ringing metric
+
+GUI tests run with `python3 -m pytest tests/` (process-isolated via pytest-forked; configured in `pytest.ini`).
+
+## Code Layout
+
+The implementation lives in the `mimo_acoustic` package; `mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so both the command line above and `import mimo_room_correction` keep working. The package can also be installed with `pip install -e .`, which provides a `mimo-solve` console command.
+
+- `mimo_acoustic/core/` — measurement loading, complex smoothing, target builders, and the regularized MIMO solver
+- `mimo_acoustic/core/pipeline.py` — `solve()` returns a `SolveResult` with all artifacts (`h_freq`, `y_freq`, `x_freq`, FIRs, diagnostics) without writing files, supports progress callbacks and cancellation; `export()` writes FIRs, the CamillaDSP YAML, and `diagnostics.json`; `validate_config()` returns pre-flight config issues
+- `mimo_acoustic/export/` — FIR coefficient files and CamillaDSP YAML generation
+- `mimo_acoustic/cli.py` — the command-line interface
+
 ## REW Measurement and Export Workflow
 
 The solver inverts the measured transfer matrix at full FFT-bin resolution (no internal spectral smoothing) and depends on phase coherence between all measurements. The realism of the output is therefore decided almost entirely by how the impulse responses are measured and exported in REW. Follow these steps:
@@ -127,7 +154,10 @@ An up-to-date example lives in `example_config.json` (regenerate any time with `
 | Parameter | Default | Description |
 |---|---|---|
 | `target_mode` | `"flat"` | `"flat"` = identical house-curve/pure-delay target at all mics; `"anchored"` = target derived from each input's primary speaker (see Target Modes section). |
-| `target_curve_points_db` | flat 0 dB | House curve as `[freq_hz, dB]` breakpoints, interpolated on a log-frequency axis. |
+| `target_curve_points_db` | flat 0 dB | House curve as `[freq_hz, dB]` breakpoints, interpolated on a log-frequency axis. Ignored when `target_curve_file` or `target_curve_ir_file` is set. |
+| `target_curve_file` | — | Path to a text file with `freq_hz` and `dB` columns (comments with `#`, comma separators accepted). Overrides `target_curve_points_db`. |
+| `target_curve_ir_file` | — | Path to a WAV or text impulse response whose magnitude response is used as the house curve shape (normalised to 0 dB in the reference band). Overrides both `target_curve_points_db` and `target_curve_file`. |
+| `target_curve_ir_smoothing_fraction` | `6.0` | Fractional-octave magnitude smoothing applied to the IR-derived house curve (`6.0` = 1/6 octave, `0` = off). |
 | `input_primary_speaker` | — | Anchored mode: the speaker each input belongs to, e.g. `{"0": 3, "1": 4}`. |
 | `anchor_phase_smoothing_fraction` | `1.0` | Anchored mode: fractional-octave complex smoothing of the primary's response before extracting target phase/levels (`1.0` = one octave). Heavy on purpose — keeps geometry, excludes the defects being corrected. |
 | `anchor_level_floor_db` | `-30.0` | Anchored mode: below this level (relative to the primary's in-band average) the target magnitude shrinks toward zero, so nothing is demanded where the primary has no output. |

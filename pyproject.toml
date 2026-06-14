@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimo-acoustic"
+version = "0.1.0"
+description = "MIMO room-correction FIR matrix solver for REW measurements and CamillaDSP"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.scripts]
+mimo-solve = "mimo_acoustic.cli:main"
+mimo-gui = "mimo_acoustic.gui.app:main"
+
+[project.optional-dependencies]
+gui = [
+    "nicegui>=2.0",
+    "plotly>=5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["mimo_acoustic*"]
