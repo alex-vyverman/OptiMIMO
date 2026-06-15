@@ -28,6 +28,14 @@ class AppState:
     cancel_event: Optional[threading.Event] = None
     last_error: str = ""
     last_dims: Optional[tuple] = None
+    
+    # Track unsaved changes
+    _config_hash: Optional[str] = field(default=None, repr=False)
+    has_unsaved_changes: bool = False
+    
+    # Track unsaved changes
+    _config_hash: Optional[str] = field(default=None, repr=False)
+    has_unsaved_changes: bool = False
 
     @property
     def base_dir(self) -> Path:
@@ -35,6 +43,226 @@ class AppState:
         if self.config_path is not None:
             return self.config_path.resolve().parent
         return Path.cwd()
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
+    
+    def _compute_config_hash(self) -> str:
+        """Compute a hash of the current config for change detection."""
+        import hashlib
+        config_str = json.dumps(self.config, sort_keys=True, default=str)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def mark_config_changed(self):
+        """Mark that the config has been modified."""
+        self.has_unsaved_changes = True
+    
+    def mark_config_saved(self):
+        """Mark that the config has been saved."""
+        self.has_unsaved_changes = False
+        self._config_hash = self._compute_config_hash()
+    
+    def check_for_external_changes(self) -> bool:
+        """Check if config has changed since last save. Returns True if changed."""
+        if self._config_hash is None:
+            return False
+        current_hash = self._compute_config_hash()
+        return current_hash != self._config_hash
 
     # ------------------------------------------------------------------
     # Config file handling
@@ -155,24 +383,6 @@ class AppState:
         config["target_curve_points_db"] = [
             [float(p[0]), float(p[1])] for p in points if len(p) >= 2
         ]
-
-        # Target curve file/IR: strip empty strings.
-        for key in ("target_curve_file", "target_curve_ir_file"):
-            val = config.get(key)
-            if val is not None and not str(val).strip():
-                config.pop(key)
-        ir_smooth = config.get("target_curve_ir_smoothing_fraction")
-        if ir_smooth is not None:
-            config["target_curve_ir_smoothing_fraction"] = float(ir_smooth)
-
-        # Target curve file/IR: strip empty strings.
-        for key in ("target_curve_file", "target_curve_ir_file"):
-            val = config.get(key)
-            if val is not None and not str(val).strip():
-                config.pop(key)
-        ir_smooth = config.get("target_curve_ir_smoothing_fraction")
-        if ir_smooth is not None:
-            config["target_curve_ir_smoothing_fraction"] = float(ir_smooth)
 
         # Target curve file/IR: strip empty strings.
         for key in ("target_curve_file", "target_curve_ir_file"):

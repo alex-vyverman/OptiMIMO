@@ -28,18 +28,23 @@ class LocalFilePicker(ui.dialog):
         self.pick_directory = pick_directory
 
         with self, ui.card().classes("w-[34rem] max-w-full"):
-            ui.label(title).classes("text-lg font-medium")
+            ui.label(title).classes("text-lg font-medium mb-2")
+            
+            # Breadcrumb path display
             self.path_label = ui.label(str(self.directory)).classes(
-                "text-xs text-gray-500 break-all"
+                "text-xs text-gray-500 break-all mb-2"
             )
+            
             self.listing = ui.column().classes(
-                "w-full h-80 overflow-y-auto border rounded p-1 gap-0"
-            )
-            with ui.row().classes("w-full justify-end gap-2"):
+                "w-full h-80 overflow-y-auto border rounded p-2 gap-1"
+            ).style("border-color: rgba(255,255,255,0.1)")
+            
+            with ui.row().classes("w-full justify-end gap-2 mt-3"):
                 ui.button("Cancel", on_click=lambda: self.submit(None)).props("flat")
                 if pick_directory:
                     ui.button(
                         "Select this folder",
+                        icon="check",
                         on_click=lambda: self.submit(self.directory),
                     )
         self._refresh()
@@ -66,7 +71,7 @@ class LocalFilePicker(ui.dialog):
                 elif not self.pick_directory:
                     if self.suffixes and child.suffix.lower() not in self.suffixes:
                         continue
-                    self._row(child.name, child, is_dir=False)
+                    self._row(f"\U0001F4C4 {child.name}", child, is_dir=False)
 
     def _row(self, label: str, path: Path, *, is_dir: bool) -> None:
         def on_click() -> None:
@@ -78,7 +83,7 @@ class LocalFilePicker(ui.dialog):
 
         ui.button(label, on_click=on_click).props("flat align=left no-caps").classes(
             "w-full justify-start text-left"
-        )
+        ).style("min-height: 32px")
 
 
 async def pick_file(

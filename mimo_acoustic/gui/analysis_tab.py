@@ -13,18 +13,39 @@ from ..core.pipeline import SolveResult
 from . import plots
 from .state import STATE
 
+_PLOTLY_LAYOUT = dict(
+    paper_bgcolor="#1a1d2e",
+    plot_bgcolor="#1a1d2e",
+    font=dict(color="#c7c9d9", family="Inter, sans-serif", size=11),
+    colorway=[
+        "#00E5FF", "#34d399", "#fbbf24", "#f87171", "#38bdf8",
+        "#a78bfa", "#fb923c", "#2dd4bf", "#e879f9", "#94a3b8",
+        "#6ee7b7", "#fca5a5", "#7dd3fc", "#c4b5fd", "#fdba74",
+    ],
+    legend=dict(
+        orientation="h", yanchor="bottom", y=1.02,
+        font=dict(color="#8b8fa3", size=10),
+        bgcolor="rgba(0,0,0,0)",
+    ),
+)
+
+_AXIS_STYLE = dict(
+    gridcolor="rgba(255,255,255,0.06)",
+    zerolinecolor="rgba(255,255,255,0.08)",
+    color="#8b8fa3",
+    tickfont=dict(color="#6b7094", size=10),
+)
+
 _SUBPLOT_LAYOUT = dict(
     margin=dict(l=50, r=20, t=30, b=40),
     height=780,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02),
-    template="plotly_white",
+    **_PLOTLY_LAYOUT,
 )
 
 _SINGLE_LAYOUT = dict(
     margin=dict(l=50, r=20, t=30, b=40),
     height=420,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02),
-    template="plotly_white",
+    **_PLOTLY_LAYOUT,
 )
 
 _achieved_cache: dict[str, Any] = {"result_id": None, "achieved": None}
@@ -70,11 +91,13 @@ def _target_reference_magnitude(result: SolveResult) -> np.ndarray:
 
 
 def _make_freq_subplots() -> go.Figure:
-    return make_subplots(
+    fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06,
         subplot_titles=("Magnitude", "Phase", "Group delay"),
         row_heights=[0.4, 0.3, 0.3],
     )
+    fig.update_annotations(font=dict(color="#8b8fa3", size=11))
+    return fig
 
 
 def _apply_axis_limits(figure: go.Figure) -> None:
@@ -92,7 +115,9 @@ def _apply_axis_limits(figure: go.Figure) -> None:
 
 def _style_freq_subplots(figure: go.Figure) -> None:
     figure.update_layout(**_SUBPLOT_LAYOUT)
-    figure.update_xaxes(type="log", range=[np.log10(15), np.log10(22000)])
+    for row in range(1, 4):
+        figure.update_xaxes(type="log", range=[np.log10(15), np.log10(22000)], **_AXIS_STYLE, row=row, col=1)
+        figure.update_yaxes(**_AXIS_STYLE, row=row, col=1)
     figure.update_xaxes(title_text="Frequency (Hz)", row=3, col=1)
     figure.update_yaxes(title_text="dB (re target)", row=1, col=1)
     figure.update_yaxes(title_text="Phase (deg)", row=2, col=1)
@@ -113,6 +138,7 @@ def _add_freq_traces(
     legendgroup: Optional[str] = None,
     showlegend: bool = True,
 ) -> None:
+    """Add magnitude, phase, and group delay traces using WebGL for performance."""
     line_kw = dict(dash=dash) if dash else {}
     
     # Normalize magnitude relative to target if reference provided
@@ -121,8 +147,9 @@ def _add_freq_traces(
     else:
         mag_values = plots.magnitude_db(spectrum[indices])
     
+    # Use Scattergl (WebGL) for high-performance rendering with many traces
     figure.add_trace(
-        go.Scatter(
+        go.Scattergl(
             x=freqs, y=mag_values,
             name=name, mode="lines", line=line_kw,
             legendgroup=legendgroup, showlegend=showlegend,
@@ -130,7 +157,7 @@ def _add_freq_traces(
         row=1, col=1,
     )
     figure.add_trace(
-        go.Scatter(
+        go.Scattergl(
             x=freqs, y=plots.phase_deg(spectrum[indices]),
             name=name, mode="lines", line=line_kw,
             legendgroup=legendgroup, showlegend=False,
@@ -140,7 +167,25 @@ def _add_freq_traces(
     gd_freqs = full_freqs if full_freqs is not None else freqs
     gd = plots.group_delay_ms(spectrum, gd_freqs)
     figure.add_trace(
-        go.Scatter(
+        go.Scattergl(
+            x=freqs, y=gd[indices],
+            name=name, mode="lines", line=line_kw,
+            legendgroup=legendgroup, showlegend=False,
+        ),
+        row=3, col=1,
+    )
+    figure.add_trace(
+        go.Scattergl(
+            x=freqs, y=plots.phase_deg(spectrum[indices]),
+            name=name, mode="lines", line=line_kw,
+            legendgroup=legendgroup, showlegend=False,
+        ),
+        row=2, col=1,
+    )
+    gd_freqs = full_freqs if full_freqs is not None else freqs
+    gd = plots.group_delay_ms(spectrum, gd_freqs)
+    figure.add_trace(
+        go.Scattergl(
             x=freqs, y=gd[indices],
             name=name, mode="lines", line=line_kw,
             legendgroup=legendgroup, showlegend=False,
@@ -166,15 +211,16 @@ def _axis_controls(plot_ref: list, figure_fn) -> None:
         _axis_limits["gd_max"] = event.value
         plot_ref[0].update_figure(figure_fn())
 
-    with ui.row().classes("items-end gap-3"):
-        ui.number("Mag min dB", value=_axis_limits["mag_min"], format="%.1f",
-                   on_change=on_mag_min).classes("w-24")
-        ui.number("Mag max dB", value=_axis_limits["mag_max"], format="%.1f",
-                   on_change=on_mag_max).classes("w-24")
-        ui.number("GD min ms", value=_axis_limits["gd_min"], format="%.1f",
-                   on_change=on_gd_min).classes("w-24")
-        ui.number("GD max ms", value=_axis_limits["gd_max"], format="%.1f",
-                   on_change=on_gd_max).classes("w-24")
+    with ui.expansion("Plot settings", icon="tune").classes("w-full mt-2"):
+        with ui.row().classes("items-end gap-3 flex-wrap"):
+            ui.number("Mag min dB", value=_axis_limits["mag_min"], format="%.1f",
+                       on_change=on_mag_min).classes("w-28")
+            ui.number("Mag max dB", value=_axis_limits["mag_max"], format="%.1f",
+                       on_change=on_mag_max).classes("w-28")
+            ui.number("GD min ms", value=_axis_limits["gd_min"], format="%.1f",
+                       on_change=on_gd_min).classes("w-28")
+            ui.number("GD max ms", value=_axis_limits["gd_max"], format="%.1f",
+                       on_change=on_gd_max).classes("w-28")
 
 
 class AnalysisTab:
@@ -283,7 +329,7 @@ def _predicted_panel(result: SolveResult) -> None:
         state["mics"] = sorted(int(v) for v in values) or [0]
         update()
 
-    with ui.row().classes("items-end gap-4"):
+    with ui.row().classes("items-end gap-4 flex-wrap"):
         ui.select(
             {k: f"input {k}" for k in range(num_inputs)},
             value=0,
@@ -301,7 +347,7 @@ def _predicted_panel(result: SolveResult) -> None:
     _axis_controls(plot_ref, figure_fn)
 
     ui.label("Residual error ||HX - Y||² / ||Y||² (mic-weighted)").classes(
-        "font-medium mt-2"
+        "font-medium mt-3"
     )
     rows = plots.residual_table(result, achieved=_achieved(result))
     columns = [{"name": "band", "label": "Band", "field": "band", "align": "left"}]
@@ -388,7 +434,7 @@ def _filters_panel(result: SolveResult) -> None:
     first_key = next(iter(crosspoints))
     impulse_plot = ui.plotly(_impulse_figure(result, first_key)).classes("w-full")
     metrics_label = ui.label(_impulse_metrics(result, first_key)).classes(
-        "text-xs text-gray-600"
+        "text-xs text-gray-500"
     )
 
     def on_crosspoint(event) -> None:
@@ -432,17 +478,21 @@ def _impulse_figure(result: SolveResult, key: str) -> go.Figure:
     time_s, envelope = plots.impulse_envelope(fir, result.sample_rate)
     delay_s = float(result.config.get("target_delay_ms", 40.0)) / 1000.0
     figure = go.Figure()
-    figure.add_trace(go.Scatter(x=time_s * 1000.0, y=envelope, mode="lines", name="|FIR| envelope"))
+    figure.add_trace(go.Scattergl(
+        x=time_s * 1000.0, y=envelope, mode="lines", name="|FIR| envelope",
+        line=dict(color="#00E5FF", width=2),
+    ))
     figure.add_vline(
         x=delay_s * 1000.0,
         line_dash="dash",
-        line_color="gray",
+        line_color="rgba(99,102,241,0.5)",
         annotation_text="target delay",
+        annotation_font_color="#8b8fa3",
     )
     figure.update_layout(
         **_SINGLE_LAYOUT,
-        xaxis=dict(title="Time (ms)"),
-        yaxis=dict(title="Envelope (dB)"),
+        xaxis=dict(title="Time (ms)", **_AXIS_STYLE),
+        yaxis=dict(title="Envelope (dB)", **_AXIS_STYLE),
     )
     return figure
 

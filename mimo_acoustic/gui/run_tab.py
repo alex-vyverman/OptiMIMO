@@ -27,7 +27,7 @@ class RunTab:
         self.timer = None
 
     def build(self) -> None:
-        with ui.column().classes("w-full max-w-5xl gap-3"):
+        with ui.column().classes("w-full max-w-5xl gap-4"):
             self._validate_section()
             self._run_section()
             self._results_section()
@@ -40,8 +40,10 @@ class RunTab:
     @ui.refreshable_method
     def _validate_section(self) -> None:
         with ui.card().classes("w-full"):
-            ui.label("1. Validate").classes("text-lg font-medium")
-            ui.button("Validate config", icon="rule", on_click=self._do_validate)
+            with ui.row().classes("items-center gap-3 mb-3"):
+                ui.icon("rule").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                ui.label("Validate").classes("text-lg font-medium")
+            ui.button("Validate config", icon="check_circle", on_click=self._do_validate)
             self._validate_results()
 
     @ui.refreshable_method
@@ -49,10 +51,15 @@ class RunTab:
         if issues is None:
             return
         if not issues:
-            ui.label("Config is valid.").classes("text-positive font-medium")
+            with ui.row().classes("items-center gap-2 mt-3"):
+                ui.icon("check_circle").classes("text-positive")
+                ui.label("Config is valid.").classes("text-positive font-medium")
             return
-        for field, message in issues:
-            ui.label(f"{field}: {message}").classes("text-negative text-sm")
+        with ui.column().classes("gap-1 mt-3"):
+            for field, message in issues:
+                with ui.row().classes("items-start gap-2"):
+                    ui.icon("error").classes("text-negative text-sm mt-0.5")
+                    ui.label(f"{field}: {message}").classes("text-negative text-sm")
 
     def _do_validate(self) -> None:
         apply_pending_fields()
@@ -69,7 +76,9 @@ class RunTab:
     @ui.refreshable_method
     def _run_section(self) -> None:
         with ui.card().classes("w-full"):
-            ui.label("2. Solve").classes("text-lg font-medium")
+            with ui.row().classes("items-center gap-3 mb-3"):
+                ui.icon("play_circle").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                ui.label("Solve").classes("text-lg font-medium")
             with ui.row().classes("items-center gap-3"):
                 run_button = ui.button("Run solver", icon="play_arrow", on_click=self._do_solve)
                 cancel_button = ui.button("Cancel", icon="stop", on_click=self._do_cancel).props(
@@ -80,8 +89,8 @@ class RunTab:
 
             # Create progress elements and store references
             if self.progress_bar is None:
-                self.progress_bar = ui.linear_progress(value=0.0, show_value=False).classes("w-full")
-                self.stage_label = ui.label("").classes("text-sm text-gray-600")
+                self.progress_bar = ui.linear_progress(value=0.0, show_value=False).classes("w-full mt-3")
+                self.stage_label = ui.label("").classes("text-sm text-gray-500 mt-1")
 
     def _start_progress_timer(self) -> None:
         """Start the progress polling timer outside the refreshable section."""
@@ -168,36 +177,43 @@ class RunTab:
     @ui.refreshable_method
     def _results_section(self) -> None:
         with ui.card().classes("w-full"):
-            ui.label("3. Results and export").classes("text-lg font-medium")
+            with ui.row().classes("items-center gap-3 mb-3"):
+                ui.icon("analytics").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                ui.label("Results and export").classes("text-lg font-medium")
             result = STATE.result
             if result is None:
                 ui.label("Run the solver to see diagnostics.").classes("text-sm text-gray-500")
                 return
 
             diagnostics = result.diagnostics
-            with ui.grid(columns=2).classes("gap-x-8 gap-y-1 text-sm"):
-                ui.label("Sample rate")
-                ui.label(f"{diagnostics.sample_rate} Hz")
-                ui.label("FFT size / taps")
-                ui.label(f"{diagnostics.fft_size} / {diagnostics.filter_taps}")
-                ui.label("Peak individual FIR gain")
-                ui.label(f"{diagnostics.max_filter_gain_db:.2f} dB")
-                ui.label("Peak speaker row-sum gain")
-                ui.label(f"{diagnostics.max_row_sum_gain_db:.2f} dB")
-                ui.label("Filters")
+            with ui.grid(columns=2).classes("gap-x-8 gap-y-2 text-sm mb-3"):
+                ui.label("Sample rate").classes("text-gray-500")
+                ui.label(f"{diagnostics.sample_rate} Hz").classes("font-medium")
+                ui.label("FFT size / taps").classes("text-gray-500")
+                ui.label(f"{diagnostics.fft_size} / {diagnostics.filter_taps}").classes("font-medium")
+                ui.label("Peak individual FIR gain").classes("text-gray-500")
+                ui.label(f"{diagnostics.max_filter_gain_db:.2f} dB").classes("font-medium")
+                ui.label("Peak speaker row-sum gain").classes("text-gray-500")
+                ui.label(f"{diagnostics.max_row_sum_gain_db:.2f} dB").classes("font-medium")
+                ui.label("Filters").classes("text-gray-500")
                 ui.label(
-                    f"{result.firs.shape[1]} outputs x {result.firs.shape[2]} inputs, "
+                    f"{result.firs.shape[1]} outputs × {result.firs.shape[2]} inputs, "
                     f"{result.firs.shape[0]} taps"
-                )
+                ).classes("font-medium")
 
             if diagnostics.warnings:
-                for warning in diagnostics.warnings:
-                    ui.label(f"WARNING: {warning}").classes("text-orange-600 text-sm")
+                with ui.column().classes("gap-1"):
+                    for warning in diagnostics.warnings:
+                        with ui.row().classes("items-start gap-2"):
+                            ui.icon("warning").classes("text-orange-500 text-sm mt-0.5")
+                            ui.label(warning).classes("text-orange-500 text-sm")
             else:
-                ui.label("No warnings.").classes("text-positive text-sm")
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("check_circle").classes("text-positive text-sm")
+                    ui.label("No warnings.").classes("text-positive text-sm")
 
             ui.separator()
-            with ui.row().classes("items-center gap-3"):
+            with ui.row().classes("items-center gap-3 mt-3"):
                 ui.button("Export FIRs + YAML", icon="save", on_click=self._do_export)
                 if STATE.export_paths is not None:
                     ui.button(
@@ -207,10 +223,11 @@ class RunTab:
                     ).props("flat")
             if STATE.export_paths is not None:
                 paths = STATE.export_paths
-                ui.label(
-                    f"Wrote {len(paths.filter_paths)} FIR filter(s) to {paths.output_dir}"
-                ).classes("text-sm")
-                ui.label(f"CamillaDSP snippet: {paths.yaml_path}").classes("text-sm")
+                with ui.column().classes("gap-1 mt-3"):
+                    ui.label(
+                        f"Wrote {len(paths.filter_paths)} FIR filter(s) to {paths.output_dir}"
+                    ).classes("text-sm text-gray-500")
+                    ui.label(f"CamillaDSP snippet: {paths.yaml_path}").classes("text-sm text-gray-500")
 
     async def _do_export(self) -> None:
         if STATE.result is None:

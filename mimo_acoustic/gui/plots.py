@@ -18,7 +18,7 @@ from ..util import EPS
 DISPLAY_FLOOR_DB = -120.0
 
 
-def log_frequency_indices(freqs: np.ndarray, f_min: float = 10.0, points: int = 800) -> np.ndarray:
+def log_frequency_indices(freqs: np.ndarray, f_min: float = 10.0, points: int = 400) -> np.ndarray:
     """Indices of `freqs` approximating `points` log-spaced samples."""
     if freqs.size < 3:
         return np.arange(freqs.size)

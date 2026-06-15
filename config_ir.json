@@ -1,38 +1,24 @@
 {
   "num_speakers": 5,
   "num_inputs": 2,
-  "input_speakers": {
-    "0": [
-      0,
-      1,
-      2,
-      3
-    ],
-    "1": [
-      0,
-      1,
-      2,
-      4
-    ]
-  },
   "target_mode": "anchored",
   "input_primary_speaker": {
     "0": 3,
     "1": 4
   },
   "anchor_phase_smoothing_fraction": 1.0,
-  "anchor_level_floor_db": -40.0,
+  "anchor_level_floor_db": -60.0,
   "num_mic_positions": 12,
   "sample_rate": 96000,
   "output_dir": "mimo_fir_output_ir",
   "output_format": "both",
   "camilladsp_conv_type": "raw",
-  "filter_taps": 1024,
-  "h_smoothing_fraction": 8.0,
-  "x_smoothing_fraction": 8.0,
-  "target_delay_ms": 10.0,
+  "filter_taps": 1048576,
+  "h_smoothing_fraction": 12.0,
+  "x_smoothing_fraction": 12.0,
+  "target_delay_ms": 180.0,
   "max_boost_db": 32.0,
-  "max_cut_db": 18.0,
+  "max_cut_db": 32.0,
   "mic_weights": [
     1.0,
     0.75,
@@ -51,21 +37,21 @@
     "0": {
       "name": "Sub L",
       "min_hz": 40.0,
-      "max_hz": 80.0,
+      "max_hz": 200.0,
       "transition_hz": 12.0,
-      "effort_penalty_db": 3.0
+      "effort_penalty_db": 0.0
     },
     "1": {
       "name": "Sub M",
       "min_hz": 17.0,
-      "max_hz": 150.0,
+      "max_hz": 200.0,
       "transition_hz": 8.0,
-      "effort_penalty_db": 3.0
+      "effort_penalty_db": 0.0
     },
     "2": {
       "name": "Sub R",
       "min_hz": 40.0,
-      "max_hz": 80.0,
+      "max_hz": 200.0,
       "transition_hz": 12.0,
       "effort_penalty_db": 0.0
     },
@@ -113,7 +99,7 @@
   ],
   "authority_floor_db": -30.0,
   "profile_disable_threshold": 0.0001,
-  "enforce_row_sum_gain_cap": false,
+  "enforce_row_sum_gain_cap": true,
   "fade_out_samples": 2048,
   "measurements": [
     {
@@ -417,7 +403,23 @@
       "path": "ir/R BW800_3sub_LRB.wav"
     }
   ],
-  "enforce_diagonal_cut_floor": true,
-  "camilladsp_filter_path_prefix": "",
-  "camilladsp_absolute_paths": false
+  "enforce_diagonal_cut_floor": false,
+  "camilladsp_filter_path_prefix": "../coeffs/",
+  "camilladsp_absolute_paths": false,
+  "input_speakers": {
+    "0": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "1": [
+      0,
+      1,
+      2,
+      4
+    ]
+  },
+  "target_curve_ir_file": "/Users/avyverman/Downloads/BobKatz-96000.wav",
+  "target_curve_ir_smoothing_fraction": 0.0
 }

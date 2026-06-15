@@ -32,7 +32,7 @@ def fresh_state() -> None:
 
 async def test_index_builds(user: User) -> None:
     await user.open("/")
-    await user.should_see("MIMO Room Correction")
+    await user.should_see("OptiMIMO")
     await user.should_see("Speaker profiles")
     await user.should_see("Input routing")
     await user.should_see("Target")
@@ -44,7 +44,7 @@ async def test_reload_does_not_touch_deleted_clients(user: User, caplog) -> None
     reload warned 'Client has been deleted but is still being used'."""
     await user.open("/")  # first client
     await user.open("/")  # simulated reload -> second client
-    user.find("New from example").click()  # triggers refresh_all()
+    user.find("New").click()  # triggers refresh_all()
     user.find("Validate config").click()  # triggers result refresh
     await user.should_see("Config is valid.")
     await asyncio.sleep(0.5)

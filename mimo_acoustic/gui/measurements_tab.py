@@ -17,10 +17,10 @@ from .state import STATE
 
 class MeasurementsTab:
     def build(self) -> None:
-        with ui.column().classes("w-full max-w-6xl gap-2"):
+        with ui.column().classes("w-full max-w-6xl gap-3"):
             self._mode_bar()
-            self._grid_section()
             self._validation_section()
+            self._grid_section()
 
     def refresh(self) -> None:
         self._mode_bar.refresh()
@@ -42,25 +42,30 @@ class MeasurementsTab:
                 )
             self.refresh()
 
-        with ui.row().classes("items-center gap-4"):
-            ui.select(
-                {"explicit": "Explicit file list", "pattern": "Filename pattern"},
-                value="explicit" if explicit else "pattern",
-                label="Measurement source",
-                on_change=set_mode,
-            ).classes("w-56")
-            ui.label(f"Files resolve relative to: {STATE.base_dir}").classes(
-                "text-xs text-gray-500"
-            )
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center gap-3 mb-3"):
+                ui.icon("mic").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                ui.label("Measurement source").classes("text-lg font-medium")
+            with ui.row().classes("items-center gap-4"):
+                ui.select(
+                    {"explicit": "Explicit file list", "pattern": "Filename pattern"},
+                    value="explicit" if explicit else "pattern",
+                    label="Source type",
+                    on_change=set_mode,
+                ).classes("w-56")
+                ui.label(f"Files resolve relative to: {STATE.base_dir}").classes(
+                    "text-xs text-gray-500"
+                )
 
     @ui.refreshable_method
     def _grid_section(self) -> None:
         if "measurement_pattern" in STATE.config and "measurements" not in STATE.config:
-            ui.input(
-                "Pattern (placeholders: {speaker} {mic} {speaker1} {mic1})",
-                value=STATE.config.get("measurement_pattern", ""),
-                on_change=lambda e: STATE.config.__setitem__("measurement_pattern", e.value),
-            ).classes("w-full max-w-2xl")
+            with ui.card().classes("w-full"):
+                ui.input(
+                    "Pattern (placeholders: {speaker} {mic} {speaker1} {mic1})",
+                    value=STATE.config.get("measurement_pattern", ""),
+                    on_change=lambda e: STATE.config.__setitem__("measurement_pattern", e.value),
+                ).classes("w-full max-w-2xl")
             return
 
         STATE.config.setdefault("measurements", [])
@@ -77,18 +82,23 @@ class MeasurementsTab:
                 return
             self._fill_dialog(Path(folder))
 
-        ui.button("Assign from folder…", icon="folder", on_click=fill_from_folder).props("flat")
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center justify-between mb-3"):
+                with ui.row().classes("items-center gap-3"):
+                    ui.icon("grid_view").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                    ui.label("Measurement grid").classes("text-lg font-medium")
+                ui.button("Assign from folder…", icon="folder", on_click=fill_from_folder)
 
-        with ui.grid(columns=speakers + 1).classes("gap-1 items-center w-full"):
-            ui.label("")
-            for speaker in range(speakers):
-                ui.label(f"{speaker}: {profiles[str(speaker)]['name']}").classes(
-                    "text-xs font-medium"
-                )
-            for mic in range(mics):
-                ui.label(f"Mic {mic}").classes("text-xs font-medium")
+            with ui.grid(columns=speakers + 1).classes("gap-2 items-center w-full"):
+                ui.label("")
                 for speaker in range(speakers):
-                    self._grid_cell(mic, speaker, grid.get((mic, speaker), ""))
+                    ui.label(f"{speaker}: {profiles[str(speaker)]['name']}").classes(
+                        "text-xs font-medium text-center"
+                    )
+                for mic in range(mics):
+                    ui.label(f"Mic {mic}").classes("text-xs font-medium")
+                    for speaker in range(speakers):
+                        self._grid_cell(mic, speaker, grid.get((mic, speaker), ""))
 
     def _grid_cell(self, mic: int, speaker: int, value: str) -> None:
         async def browse() -> None:
@@ -135,15 +145,15 @@ class MeasurementsTab:
         names = [p.name for p in files]
 
         with ui.dialog(value=True) as dialog, ui.card().classes("w-[44rem] max-w-full"):
-            ui.label(f"Assign files from {folder}").classes("font-medium")
+            ui.label(f"Assign files from {folder}").classes("text-lg font-medium")
             ui.label(
                 "Pick the file for each speaker/mic pair. Fields left empty are not changed."
-            ).classes("text-xs text-gray-500")
+            ).classes("text-xs text-gray-500 mb-3")
             selects: dict[tuple[int, int], Any] = {}
             with ui.scroll_area().classes("h-96 w-full"):
                 for speaker in range(STATE.num_speakers()):
                     ui.label(f"Speaker {speaker}: {profiles[str(speaker)]['name']}").classes(
-                        "font-medium mt-2"
+                        "font-medium mt-3 mb-1"
                     )
                     for mic in range(mics):
                         selects[(mic, speaker)] = ui.select(
@@ -161,18 +171,21 @@ class MeasurementsTab:
                 dialog.close()
                 self._grid_section.refresh()
 
-            with ui.row().classes("w-full justify-end gap-2"):
+            with ui.row().classes("w-full justify-end gap-2 mt-3"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
-                ui.button("Apply", on_click=apply)
+                ui.button("Apply", icon="check", on_click=apply)
 
     # ------------------------------------------------------------------
     # Validation
 
     @ui.refreshable_method
     def _validation_section(self) -> None:
-        with ui.row().classes("items-center gap-2"):
-            ui.button("Validate measurements", icon="rule", on_click=self._run_validation)
-        self._validation_results()
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center gap-3 mb-3"):
+                ui.icon("verified").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
+                ui.label("Validation").classes("text-lg font-medium")
+            ui.button("Validate measurements", icon="check_circle", on_click=self._run_validation)
+            self._validation_results()
 
     @ui.refreshable_method
     def _validation_results(
@@ -181,7 +194,7 @@ class MeasurementsTab:
         if rows is None:
             return
         if summary:
-            ui.label(summary).classes("font-medium")
+            ui.label(summary).classes("font-medium mt-3")
         ui.table(
             columns=[
                 {"name": "cell", "label": "Mic / Speaker", "field": "cell", "align": "left"},
@@ -190,7 +203,7 @@ class MeasurementsTab:
             ],
             rows=rows,
             row_key="cell",
-        ).classes("w-full text-xs")
+        ).classes("w-full text-xs mt-2")
 
     async def _run_validation(self) -> None:
         config = dict(STATE.config)
