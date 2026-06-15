@@ -59,7 +59,20 @@ jobs:
 
       - name: Verify binary exists
         run: |
-          ls -la releases/ || dir releases\
+          python - <<'PY'
+          from pathlib import Path
+          
+          release_dir = Path("releases")
+          if not release_dir.is_dir():
+              raise SystemExit("releases directory not found")
+          
+          files = sorted(release_dir.glob("OptiMIMO-*"))
+          for path in files:
+              print(path)
+          
+          if not files:
+              raise SystemExit("No release binaries found in releases/")
+          PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
