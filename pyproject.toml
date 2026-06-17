@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-mimo-solve = "mimo_acoustic.cli:main"
-mimo-gui = "mimo_acoustic.gui.app:main"
+mimo-solve = "optimimo.cli:main"
+mimo-gui = "optimimo.gui.app:main"
 
 [project.optional-dependencies]
 gui = [
@@ -24,4 +24,4 @@ gui = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["mimo_acoustic*"]
+include = ["optimimo*"]

@@ -2,12 +2,12 @@
 
 The test plugin re-executes this file for every test (after resetting
 NiceGUI's globals), so the page must be (re-)registered here rather than
-relying on import-time decorators in mimo_acoustic.gui.app.
+relying on import-time decorators in optimimo.gui.app.
 """
 
 from nicegui import ui
 
-from mimo_acoustic.gui import app
+from optimimo.gui import app
 
 ui.page("/")(app.index)
 ui.run(storage_secret="test")

@@ -41,7 +41,7 @@ async def test_config_number_inputs_interactive(user: User):
     assert not element.props.get("disable", False)
     
     # Try to change the value
-    from mimo_acoustic.gui.state import STATE
+    from optimimo.gui.state import STATE
     old_value = STATE.config["num_speakers"]
     
     # Simulate a value change
