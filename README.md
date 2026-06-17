@@ -1,4 +1,6 @@
-# MIMO Room Correction FIR Matrix Solver
+# OptiMIMO
+
+*MIMO Room Correction FIR Matrix Solver*
 
 This workspace contains a foundational Python pipeline for an active room-correction matrix with support speakers. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
 
