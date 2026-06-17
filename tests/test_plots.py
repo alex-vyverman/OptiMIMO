@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from mimo_acoustic import solve
-from mimo_acoustic.cli import synthetic_room_irs
-from mimo_acoustic.gui import plots
+from optimimo import solve
+from optimimo.cli import synthetic_room_irs
+from optimimo.gui import plots
 
 
 def _small_result():

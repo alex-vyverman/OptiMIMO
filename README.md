@@ -38,7 +38,7 @@ A local browser-based GUI (NiceGUI) covers the full workflow: config editing, me
 
 ```bash
 python3 -m pip install -r requirements.txt   # includes nicegui
-python3 -m mimo_acoustic.gui.app --config config_ir.json
+python3 -m optimimo.gui.app --config config_ir.json
 ```
 
 This opens `http://localhost:8080` (use `--port` and `--no-browser` to change behavior; `pip install -e .` also provides a `mimo-gui` command). Tabs:
@@ -52,12 +52,12 @@ GUI tests run with `python3 -m pytest tests/` (process-isolated via pytest-forke
 
 ## Code Layout
 
-The implementation lives in the `mimo_acoustic` package; `mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so both the command line above and `import mimo_room_correction` keep working. The package can also be installed with `pip install -e .`, which provides a `mimo-solve` console command.
+The implementation lives in the `optimimo` package; `mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so both the command line above and `import mimo_room_correction` keep working. The package can also be installed with `pip install -e .`, which provides a `mimo-solve` console command.
 
-- `mimo_acoustic/core/` — measurement loading, complex smoothing, target builders, and the regularized MIMO solver
-- `mimo_acoustic/core/pipeline.py` — `solve()` returns a `SolveResult` with all artifacts (`h_freq`, `y_freq`, `x_freq`, FIRs, diagnostics) without writing files, supports progress callbacks and cancellation; `export()` writes FIRs, the CamillaDSP YAML, and `diagnostics.json`; `validate_config()` returns pre-flight config issues
-- `mimo_acoustic/export/` — FIR coefficient files and CamillaDSP YAML generation
-- `mimo_acoustic/cli.py` — the command-line interface
+- `optimimo/core/` — measurement loading, complex smoothing, target builders, and the regularized MIMO solver
+- `optimimo/core/pipeline.py` — `solve()` returns a `SolveResult` with all artifacts (`h_freq`, `y_freq`, `x_freq`, FIRs, diagnostics) without writing files, supports progress callbacks and cancellation; `export()` writes FIRs, the CamillaDSP YAML, and `diagnostics.json`; `validate_config()` returns pre-flight config issues
+- `optimimo/export/` — FIR coefficient files and CamillaDSP YAML generation
+- `optimimo/cli.py` — the command-line interface
 
 ## REW Measurement and Export Workflow
 

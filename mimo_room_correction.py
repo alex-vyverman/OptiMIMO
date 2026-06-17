@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Backwards-compatible entry point for the MIMO room-correction solver.
 
-The implementation lives in the `mimo_acoustic` package; this module re-exports
+The implementation lives in the `optimimo` package; this module re-exports
 the public API so existing imports (`import mimo_room_correction`) and the
 original command line keep working:
 
     python3 mimo_room_correction.py --config config_ir.json
 
-See `mimo_acoustic/__init__.py` for the mathematical model description.
+See `optimimo/__init__.py` for the mathematical model description.
 """
 
 from __future__ import annotations
 
-from mimo_acoustic import (  # noqa: F401
+from optimimo import (  # noqa: F401
     EPS,
     ExportPaths,
     ProgressFn,
@@ -62,7 +62,7 @@ from mimo_acoustic import (  # noqa: F401
     validate_config,
     yaml_quote,
 )
-from mimo_acoustic.cli import (  # noqa: F401
+from optimimo.cli import (  # noqa: F401
     build_arg_parser,
     main,
     run_pipeline,

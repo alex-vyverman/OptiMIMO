@@ -15,7 +15,7 @@ else:
 if base_path not in sys.path:
     sys.path.insert(0, base_path)
 
-from mimo_acoustic.gui.app import main
+from optimimo.gui.app import main
 
 if __name__ == "__main__":
     main()

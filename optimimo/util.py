@@ -1,4 +1,4 @@
-"""Shared numeric utilities and dependency guard for mimo_acoustic."""
+"""Shared numeric utilities and dependency guard for optimimo."""
 
 from __future__ import annotations
 

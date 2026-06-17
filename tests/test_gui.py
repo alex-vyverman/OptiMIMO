@@ -15,8 +15,8 @@ import pytest
 from nicegui.testing import User
 from scipy.io import wavfile
 
-from mimo_acoustic.cli import synthetic_room_irs
-from mimo_acoustic.gui.state import STATE
+from optimimo.cli import synthetic_room_irs
+from optimimo.gui.state import STATE
 
 pytest_plugins = ["nicegui.testing.user_plugin"]
 
