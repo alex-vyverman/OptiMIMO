@@ -24,15 +24,16 @@ async def test_config_number_inputs_interactive(user: User):
     """Test that number inputs on Config tab respond to changes."""
     await user.open("/")
     
-    # Find the Speakers number input (filter by kind so tooltips/labels
-    # that also match the "Speakers" text don't get picked up).
-    speakers_input = user.find("Speakers", kind=ui.number)
-
-    assert speakers_input is not None
-    assert len(speakers_input.elements) > 0
-
-    element = list(speakers_input.elements)[0]
-    assert isinstance(element, ui.number)
+    # find(text) selects by visible text. nicegui ignores `kind` when the
+    # target is a string, so the match set also includes the tooltip that
+    # shares the "Speakers" text. Pick the ui.number explicitly instead of
+    # indexing the set, whose iteration order is non-deterministic (it was
+    # flaky across platforms/Python builds, failing only when [0] landed on
+    # the tooltip).
+    speakers_input = user.find("Speakers")
+    numbers = [e for e in speakers_input.elements if isinstance(e, ui.number)]
+    assert len(numbers) == 1, f"expected one Speakers number input, got {numbers}"
+    element = numbers[0]
     assert not element.props.get("disable", False)
 
     # Drive the change through set_value so the registered on_change handler
