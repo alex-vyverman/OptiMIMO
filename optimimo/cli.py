@@ -160,7 +160,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(tempfile.gettempdir()) / "mimo_room_correction_smoke",
+        default=Path(tempfile.gettempdir()) / "optimimo_smoke",
         help="Output directory for --smoke-test.",
     )
     return parser

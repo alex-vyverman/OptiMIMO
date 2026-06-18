@@ -1,5 +1,9 @@
 # OptiMIMO
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml/badge.svg)](https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml)
+
 *MIMO Room Correction FIR Matrix Solver*
 
 OptiMIMO is a desktop tool for designing an active room-correction matrix with support speakers. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
@@ -29,8 +33,6 @@ python3 -m optimimo.gui.app
 
 This opens `http://localhost:8080` in your default browser. Pass `--config path/to/config.json` to open an existing project, `--port` to change the port, or `--no-browser` to skip auto-launch. Installing with `pip install -e .` also provides a `mimo-gui` shortcut.
 
-> _Screenshot placeholder: GUI landing view after launch._
-
 ## Using the GUI
 
 The GUI covers the full workflow end-to-end: configure the solve, assign measurements, run, and inspect the result. Each step is a tab.
@@ -43,21 +45,13 @@ All solver parameters are grouped exactly as in the [Configuration Reference](#c
 - Load / Save buttons read and write JSON
 - Group-by-group layout matches the reference tables for easy lookup
 
-> _Screenshot placeholder: Config tab with parameter groups expanded._
-
 ### Measurements tab
 
 A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory using a filename pattern, and every file is validated on load (existence, sample rate, length).
 
-> _Screenshot placeholder: Measurements tab showing the speaker x mic grid and folder-assign helper._
-
 ### Run tab
 
 Runs a pre-flight config check, then the solve. Progress is reported per stage and the solve can be cancelled mid-run. When it completes, a diagnostics summary appears and FIR coefficients plus the CamillaDSP YAML snippet are exported to `output_dir`.
-
-> _Screenshot placeholder: Run tab during a solve, showing stage progress and the cancel button._
-
-> _Screenshot placeholder: Run tab after completion, showing diagnostics summary and export confirmation._
 
 ### Analysis tab
 
@@ -67,10 +61,6 @@ Interactive plots from the most recent solve:
 - Predicted corrected response vs target per mic, with a per-band residual-error table
 - Filter magnitudes per crosspoint
 - Impulse envelopes with a target-delay marker and pre-ringing metric
-
-> _Screenshot placeholder: Analysis tab with measured responses and corrected-vs-target plots._
-
-> _Screenshot placeholder: Analysis tab showing filter magnitudes and impulse envelopes._
 
 ## Command-Line Use (optional)
 
@@ -82,7 +72,7 @@ python3 -m optimimo --config example_config.json
 python3 -m optimimo --smoke-test --output-dir /tmp/mimo_smoke
 ```
 
-`mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so `python3 mimo_room_correction.py --config ...` and `import mimo_room_correction` keep working. `pip install -e .` adds a `mimo-solve` console command.
+`pip install -e .` adds a `mimo-solve` console command for the CLI entry point shown above.
 
 ## Code Layout
 
