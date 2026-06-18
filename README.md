@@ -2,7 +2,7 @@
 
 *MIMO Room Correction FIR Matrix Solver*
 
-This workspace contains a foundational Python pipeline for an active room-correction matrix with support speakers. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
+OptiMIMO is a desktop tool for designing an active room-correction matrix with support speakers. It loads one REW impulse response per speaker/microphone pair, builds the frequency-domain room matrix `H(f)`, solves a regularized MIMO inverse, exports `N x N` FIR filters, and writes a CamillaDSP branch/filter/sum YAML snippet.
 
 At each frequency bin, the solver minimizes:
 
@@ -20,44 +20,81 @@ X_f = (H_f^H Wm H_f + Gamma_f)^-1 H_f^H Wm Y_f
 
 ## Quick Start
 
+Install dependencies and launch the GUI:
+
 ```bash
 python3 -m pip install -r requirements.txt
-python3 mimo_room_correction.py --write-example-config example_config.json
-python3 mimo_room_correction.py --config example_config.json
+python3 -m optimimo.gui.app
 ```
 
-Run the synthetic smoke test without REW files:
+This opens `http://localhost:8080` in your default browser. Pass `--config path/to/config.json` to open an existing project, `--port` to change the port, or `--no-browser` to skip auto-launch. Installing with `pip install -e .` also provides a `mimo-gui` shortcut.
+
+> _Screenshot placeholder: GUI landing view after launch._
+
+## Using the GUI
+
+The GUI covers the full workflow end-to-end: configure the solve, assign measurements, run, and inspect the result. Each step is a tab.
+
+### Config tab
+
+All solver parameters are grouped exactly as in the [Configuration Reference](#configuration-reference) below. The same JSON files used by `--config` on the CLI load and save here, so configs are interchangeable between projects and machines.
+
+- Edit parameters inline with validation as you type
+- Load / Save buttons read and write JSON
+- Group-by-group layout matches the reference tables for easy lookup
+
+> _Screenshot placeholder: Config tab with parameter groups expanded._
+
+### Measurements tab
+
+A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory using a filename pattern, and every file is validated on load (existence, sample rate, length).
+
+> _Screenshot placeholder: Measurements tab showing the speaker x mic grid and folder-assign helper._
+
+### Run tab
+
+Runs a pre-flight config check, then the solve. Progress is reported per stage and the solve can be cancelled mid-run. When it completes, a diagnostics summary appears and FIR coefficients plus the CamillaDSP YAML snippet are exported to `output_dir`.
+
+> _Screenshot placeholder: Run tab during a solve, showing stage progress and the cancel button._
+
+> _Screenshot placeholder: Run tab after completion, showing diagnostics summary and export confirmation._
+
+### Analysis tab
+
+Interactive plots from the most recent solve:
+
+- Measured responses per speaker, overlaid across mic positions
+- Predicted corrected response vs target per mic, with a per-band residual-error table
+- Filter magnitudes per crosspoint
+- Impulse envelopes with a target-delay marker and pre-ringing metric
+
+> _Screenshot placeholder: Analysis tab with measured responses and corrected-vs-target plots._
+
+> _Screenshot placeholder: Analysis tab showing filter magnitudes and impulse envelopes._
+
+## Command-Line Use (optional)
+
+The same pipeline is available headlessly for batch runs or scripted workflows:
 
 ```bash
-python3 mimo_room_correction.py --smoke-test --output-dir /tmp/mimo_room_correction_smoke
+python3 -m optimimo --write-example-config example_config.json
+python3 -m optimimo --config example_config.json
+python3 -m optimimo --smoke-test --output-dir /tmp/mimo_smoke
 ```
 
-## GUI
-
-A local browser-based GUI (NiceGUI) covers the full workflow: config editing, measurement assignment with validation, and solving with progress, cancellation, diagnostics, and export.
-
-```bash
-python3 -m pip install -r requirements.txt   # includes nicegui
-python3 -m optimimo.gui.app --config config_ir.json
-```
-
-This opens `http://localhost:8080` (use `--port` and `--no-browser` to change behavior; `pip install -e .` also provides a `mimo-gui` command). Tabs:
-
-- **Config** — all solver parameters grouped as in the Configuration Reference, with load/save of the same JSON files the CLI uses
-- **Measurements** — speaker x mic file grid with a folder-assign helper and per-file validation (existence, sample rate, length)
-- **Run** — pre-flight config validation, solve with stage progress and cancel, diagnostics summary, FIR/YAML export
-- **Analysis** — interactive plots from the last solve: measured responses per speaker across mics, predicted corrected response vs target per mic with a per-band residual-error table, filter magnitudes per crosspoint, and impulse envelopes with a target-delay marker and pre-ringing metric
-
-GUI tests run with `python3 -m pytest tests/` (process-isolated via pytest-forked; configured in `pytest.ini`).
+`mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so `python3 mimo_room_correction.py --config ...` and `import mimo_room_correction` keep working. `pip install -e .` adds a `mimo-solve` console command.
 
 ## Code Layout
 
-The implementation lives in the `optimimo` package; `mimo_room_correction.py` is a thin compatibility shim that re-exports the public API, so both the command line above and `import mimo_room_correction` keep working. The package can also be installed with `pip install -e .`, which provides a `mimo-solve` console command.
+The implementation lives in the `optimimo` package.
 
 - `optimimo/core/` — measurement loading, complex smoothing, target builders, and the regularized MIMO solver
 - `optimimo/core/pipeline.py` — `solve()` returns a `SolveResult` with all artifacts (`h_freq`, `y_freq`, `x_freq`, FIRs, diagnostics) without writing files, supports progress callbacks and cancellation; `export()` writes FIRs, the CamillaDSP YAML, and `diagnostics.json`; `validate_config()` returns pre-flight config issues
 - `optimimo/export/` — FIR coefficient files and CamillaDSP YAML generation
+- `optimimo/gui/` — the NiceGUI desktop interface
 - `optimimo/cli.py` — the command-line interface
+
+GUI tests run with `python3 -m pytest tests/` (process-isolated via pytest-forked; configured in `pytest.ini`).
 
 ## REW Measurement and Export Workflow
 
@@ -111,11 +148,11 @@ Use either an explicit `measurements` list or a pattern:
 "measurement_pattern": "measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"
 ```
 
-The pattern supports zero-based `{speaker}`, `{mic}` and one-based `{speaker1}`, `{mic1}` placeholders.
+The pattern supports zero-based `{speaker}`, `{mic}` and one-based `{speaker1}`, `{mic1}` placeholders. In the GUI, the Measurements tab's folder-assign helper accepts the same template.
 
 ## Configuration Reference
 
-An up-to-date example lives in `example_config.json` (regenerate any time with `--write-example-config`). All parameters by group:
+An up-to-date example lives in `example_config.json` (regenerate any time from the GUI's Config tab or with `--write-example-config`). All parameters by group:
 
 ### Dimensions and measurements
 
