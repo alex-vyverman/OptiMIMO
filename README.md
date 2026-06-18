@@ -112,14 +112,24 @@ The solver inverts the measured transfer matrix at full FFT-bin resolution (no i
 - Load the microphone calibration file before measuring (it is baked into the export).
 - Use long sweeps (256k-512k at 96 kHz) with 2+ repetitions for SNR. The solver will happily "correct" low-frequency noise as if it were real room response, especially near the `authority_floor_db` limit.
 
-### 3. Windowing in REW (this is your smoothing)
+### 3. Windowing in REW
 
-REW's fractional-octave smoothing only affects the displayed magnitude trace, **not** the exported impulse response. The time-domain equivalent is windowing, and this script applies none, so do it in REW before export:
+REW's fractional-octave smoothing only affects the displayed magnitude trace, **not** the exported impulse response. Two things matter here, and they are independent:
 
-- Apply a **frequency-dependent window (FDW)** of roughly **6-10 cycles** (IR Windows -> "Add frequency dependent window"). This is equivalent to ~1/6-1/10 octave complex smoothing: it discards late, position-dependent reflections at mid/high frequencies while preserving full modal detail at low frequencies. Without it, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position.
-- Left window: short (about 1 ms Tukey) ahead of the reference.
+**Left/right time-domain windows (always do this in REW):**
+
+- Left window: short (about 1 ms Tukey) ahead of the reference, to suppress pre-arrival noise without disturbing causality.
 - Right window: long enough for low-frequency resolution (for example 65536 samples at 96 kHz is 683 ms, matching `ir_length_samples`).
 - Export with the windows applied.
+
+**Frequency-dependent smoothing (do this *either* in REW *or* in the solver, not both):**
+
+Without some form of frequency-dependent smoothing, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position. You have two equivalent ways to apply it:
+
+- *In the solver (recommended):* set `h_smoothing_fraction` to `6.0`-`10.0` (≈ 1/6-1/10 octave). This is reproducible from the config, de-rotates each IR by its direct-sound arrival so relative phase is preserved, and lets you change the amount without re-exporting.
+- *In REW:* apply a **frequency-dependent window (FDW)** of roughly **6-10 cycles** (IR Windows -> "Add frequency dependent window") before export. Equivalent effect; baked into the WAV.
+
+Pick one. If you apply both, the smoothing compounds and you lose modal detail you wanted to keep.
 
 ### 4. Export settings
 
