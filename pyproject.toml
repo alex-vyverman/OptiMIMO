@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,10 +8,40 @@ version = "0.1.0"
 description = "MIMO room-correction FIR matrix solver for REW measurements and CamillaDSP"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Alexander Vyverman"}]
+keywords = [
+    "room-correction",
+    "dsp",
+    "fir",
+    "mimo",
+    "rew",
+    "camilladsp",
+    "audio",
+    "acoustics",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/alex-vyverman/OptiMIMO"
+Repository = "https://github.com/alex-vyverman/OptiMIMO"
+Issues = "https://github.com/alex-vyverman/OptiMIMO/issues"
 
 [project.scripts]
 mimo-solve = "optimimo.cli:main"
