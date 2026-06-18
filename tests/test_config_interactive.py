@@ -1,6 +1,6 @@
 import pytest
+from nicegui import Client, ui
 from nicegui.testing import User
-from nicegui import Client
 
 pytest_plugins = ["nicegui.testing.user_plugin"]
 
@@ -24,29 +24,24 @@ async def test_config_number_inputs_interactive(user: User):
     """Test that number inputs on Config tab respond to changes."""
     await user.open("/")
     
-    # Find the Speakers number input
-    speakers_input = user.find("Speakers")
-    
-    # Check that it's a number input
+    # Find the Speakers number input (filter by kind so tooltips/labels
+    # that also match the "Speakers" text don't get picked up).
+    speakers_input = user.find("Speakers", kind=ui.number)
+
     assert speakers_input is not None
     assert len(speakers_input.elements) > 0
-    
-    # Get the first element from the set
+
     element = list(speakers_input.elements)[0]
-    print(f"Element type: {type(element)}")
-    print(f"Element tag: {element.tag}")
-    print(f"Element props: {element.props}")
-    
-    # Check that it's not disabled
+    assert isinstance(element, ui.number)
     assert not element.props.get("disable", False)
-    
-    # Try to change the value
+
+    # Drive the change through set_value so the registered on_change handler
+    # fires, then yield to the event loop so its side effects land before we
+    # assert on STATE.
     from optimimo.gui.state import STATE
     old_value = STATE.config["num_speakers"]
-    
-    # Simulate a value change
-    element.value = old_value + 1
-    
-    # Check that the config was updated
+    element.set_value(old_value + 1)
+    await user.should_see("Speakers")
+
     assert STATE.config["num_speakers"] == old_value + 1
 
