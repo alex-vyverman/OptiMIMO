@@ -11,6 +11,13 @@ from typing import Any, Optional
 from nicegui import run, ui
 
 from ..core.io import load_impulse_response, measurement_path_grid
+from ..core.rew import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    RewError,
+    download_measurements_to_wavs,
+    fetch_measurements,
+)
 from .file_picker import pick_directory, pick_file
 from .state import STATE
 
@@ -62,10 +69,15 @@ class MeasurementsTab:
         if "measurement_pattern" in STATE.config and "measurements" not in STATE.config:
             with ui.card().classes("w-full"):
                 ui.input(
-                    "Pattern (placeholders: {speaker} {mic} {speaker1} {mic1})",
+                    "Pattern",
                     value=STATE.config.get("measurement_pattern", ""),
                     on_change=lambda e: STATE.config.__setitem__("measurement_pattern", e.value),
                 ).classes("w-full max-w-2xl")
+                ui.label(
+                    "Placeholders: {speaker} {mic} (0-based), {speaker1} {mic1} (1-based), "
+                    "{speaker_name} (from the speaker profile), {mic_name} (from the mic "
+                    "position name set on the Config tab)."
+                ).classes("text-xs text-gray-500 mt-1")
             return
 
         STATE.config.setdefault("measurements", [])
@@ -87,7 +99,9 @@ class MeasurementsTab:
                 with ui.row().classes("items-center gap-3"):
                     ui.icon("grid_view").classes("text-xl").style("color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));")
                     ui.label("Measurement grid").classes("text-lg font-medium")
-                ui.button("Assign from folder…", icon="folder", on_click=fill_from_folder)
+                with ui.row().classes("items-center gap-2"):
+                    ui.button("Import from REW…", icon="cloud_download", on_click=self._rew_import_dialog)
+                    ui.button("Assign from folder…", icon="folder", on_click=fill_from_folder)
 
             with ui.grid(columns=speakers + 1).classes("gap-2 items-center w-full"):
                 ui.label("")
@@ -96,7 +110,7 @@ class MeasurementsTab:
                         "text-xs font-medium text-center"
                     )
                 for mic in range(mics):
-                    ui.label(f"Mic {mic}").classes("text-xs font-medium")
+                    ui.label(STATE.mic_name(mic)).classes("text-xs font-medium")
                     for speaker in range(speakers):
                         self._grid_cell(mic, speaker, grid.get((mic, speaker), ""))
 
@@ -157,7 +171,7 @@ class MeasurementsTab:
                     )
                     for mic in range(mics):
                         selects[(mic, speaker)] = ui.select(
-                            names, label=f"Mic {mic}", with_input=True, clearable=True
+                            names, label=STATE.mic_name(mic), with_input=True, clearable=True
                         ).classes("w-full")
 
             def apply() -> None:
@@ -174,6 +188,144 @@ class MeasurementsTab:
             with ui.row().classes("w-full justify-end gap-2 mt-3"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
                 ui.button("Apply", icon="check", on_click=apply)
+
+    def _rew_import_dialog(self) -> None:
+        """Pull measurements from a running REW instance over its HTTP API.
+
+        Connect to REW, assign loaded measurements to speaker/mic pairs (same
+        layout as the folder-assign dialog), then download the impulse responses
+        as timing-aligned WAVs and fold them into the measurement grid.
+        """
+        profiles = STATE.config["speaker_profiles"]
+        speakers = STATE.num_speakers()
+        mics = STATE.num_mics()
+        host_default = str(STATE.config.get("rew_host", DEFAULT_HOST))
+        port_default = int(STATE.config.get("rew_port", DEFAULT_PORT) or DEFAULT_PORT)
+
+        selects: dict[tuple[int, int], Any] = {}
+        by_uuid: dict[str, dict[str, Any]] = {}
+
+        with ui.dialog(value=True) as dialog, ui.card().classes("w-[44rem] max-w-full"):
+            ui.label("Import measurements from REW").classes("text-lg font-medium")
+            ui.label(
+                "Requires REW V5.40+ with the HTTP API started (Preferences → API). "
+                "Measurements must have been captured with a timing reference; the "
+                "import preserves their relative timing."
+            ).classes("text-xs text-gray-500 mb-2")
+
+            assign_area = ui.column().classes("w-full")
+
+            async def apply_import() -> None:
+                assignments: list[dict[str, Any]] = []
+                for (mic, speaker), select in selects.items():
+                    uuid = select.value
+                    if not uuid:
+                        continue
+                    meas = by_uuid.get(uuid, {})
+                    assignments.append(
+                        {
+                            "mic": mic,
+                            "speaker": speaker,
+                            "meas_id": uuid,
+                            "title": meas.get("title", uuid),
+                            "sample_rate": meas.get("sample_rate"),
+                        }
+                    )
+                if not assignments:
+                    ui.notify("Nothing selected to import", type="warning")
+                    return
+                host = (host_input.value or DEFAULT_HOST).strip()
+                try:
+                    port = int(port_input.value or DEFAULT_PORT)
+                except (TypeError, ValueError):
+                    ui.notify("Port must be a number", type="negative")
+                    return
+                out_dir = STATE.base_dir / "rew_import"
+                ui.notify(
+                    f"Downloading {len(assignments)} measurement(s) from REW…", type="info"
+                )
+                try:
+                    written = await run.io_bound(
+                        download_measurements_to_wavs, host, port, assignments, out_dir
+                    )
+                except RewError as exc:
+                    ui.notify(str(exc), type="negative")
+                    return
+                for entry in written:
+                    path = Path(entry["path"])
+                    try:
+                        relative = str(path.relative_to(STATE.base_dir))
+                    except ValueError:
+                        relative = str(path)
+                    STATE.set_measurement(entry["mic"], entry["speaker"], relative)
+                dialog.close()
+                self._grid_section.refresh()
+                ui.notify(
+                    f"Imported {len(written)} measurement(s) into rew_import/", type="positive"
+                )
+
+            def build_assignment(measurements: list[dict[str, Any]]) -> None:
+                assign_area.clear()
+                selects.clear()
+                by_uuid.clear()
+                with_ir = [m for m in measurements if m["has_ir"]]
+                if not with_ir:
+                    with assign_area:
+                        ui.label(
+                            "No measurements with an impulse response found in REW."
+                        ).classes("text-orange-500 text-sm mt-2")
+                    return
+                by_uuid.update({m["uuid"]: m for m in with_ir})
+                options = {m["uuid"]: f"{m['index']}: {m['title']}" for m in with_ir}
+                with assign_area:
+                    ui.label(
+                        f"{len(with_ir)} measurement(s) available. "
+                        "Pick the measurement for each speaker/mic pair; "
+                        "fields left empty are skipped."
+                    ).classes("text-xs text-gray-500 mt-2 mb-1")
+                    with ui.scroll_area().classes("h-80 w-full"):
+                        for speaker in range(speakers):
+                            ui.label(
+                                f"Speaker {speaker}: {profiles[str(speaker)]['name']}"
+                            ).classes("font-medium mt-3 mb-1")
+                            for mic in range(mics):
+                                selects[(mic, speaker)] = ui.select(
+                                    options,
+                                    label=STATE.mic_name(mic),
+                                    with_input=True,
+                                    clearable=True,
+                                ).classes("w-full")
+                    with ui.row().classes("w-full justify-end gap-2 mt-3"):
+                        ui.button("Cancel", on_click=dialog.close).props("flat")
+                        ui.button(
+                            "Import selected", icon="cloud_download", on_click=apply_import
+                        )
+
+            async def connect() -> None:
+                host = (host_input.value or DEFAULT_HOST).strip()
+                try:
+                    port = int(port_input.value or DEFAULT_PORT)
+                except (TypeError, ValueError):
+                    ui.notify("Port must be a number", type="negative")
+                    return
+                STATE.config["rew_host"] = host
+                STATE.config["rew_port"] = port
+                ui.notify("Connecting to REW…", type="info")
+                try:
+                    measurements = await run.io_bound(fetch_measurements, host, port)
+                except RewError as exc:
+                    ui.notify(str(exc), type="negative")
+                    return
+                build_assignment(measurements)
+
+            with ui.row().classes("items-end gap-2"):
+                host_input = ui.input("Host", value=host_default).props(
+                    "dense outlined"
+                ).classes("w-48")
+                port_input = ui.input("Port", value=str(port_default)).props(
+                    "dense outlined"
+                ).classes("w-28")
+                ui.button("Connect", icon="link", on_click=connect)
 
     # ------------------------------------------------------------------
     # Validation

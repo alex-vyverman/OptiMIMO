@@ -47,7 +47,18 @@ All solver parameters are grouped exactly as in the [Configuration Reference](#c
 
 ### Measurements tab
 
-A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory using a filename pattern, and every file is validated on load (existence, sample rate, length).
+A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory using a filename pattern, and every file is validated on load (existence, sample rate, length). An **Import from REW** button pulls impulse responses straight from a running REW instance over its HTTP API — see [Importing measurements from REW](#importing-measurements-from-rew-http-api) below.
+
+### Importing measurements from REW (HTTP API)
+
+Instead of manually exporting one WAV per crosspoint, you can pull measurements directly from REW. On the Measurements tab (explicit file-list mode), click **Import from REW…**:
+
+1. **Enable the API in REW.** This needs **REW V5.40 or newer** (currently a beta release line). Start the server from Preferences → API (or launch REW with `-api`). The API is loopback-only and unauthenticated.
+2. **Connect.** The dialog defaults to `127.0.0.1:4735`; the host/port are remembered in the config. Connecting lists every loaded measurement that has an impulse response.
+3. **Assign.** Pick the REW measurement for each speaker/mic pair (same layout as the folder-assign helper). Leave a cell empty to skip it.
+4. **Import.** The selected impulse responses are downloaded (un-normalised, so relative levels between speakers and mic positions are preserved), written as 32-bit-float mono WAVs under `rew_import/` next to your config, and assigned into the grid. Validate as usual before solving.
+
+The import bakes each IR's REW-reported start time into a fixed pre-roll so every file shares one absolute time reference, preserving the relative time-of-flight between measurements. This is only physically correct if the measurements were captured with an **acoustic (or loopback) timing reference** in REW — the API cannot recover relative timing that was never measured (see [REW Measurement and Export Workflow](#rew-measurement-and-export-workflow)).
 
 ### Run tab
 
@@ -148,7 +159,22 @@ Use either an explicit `measurements` list or a pattern:
 "measurement_pattern": "measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"
 ```
 
-The pattern supports zero-based `{speaker}`, `{mic}` and one-based `{speaker1}`, `{mic1}` placeholders. In the GUI, the Measurements tab's folder-assign helper accepts the same template.
+The pattern supports these placeholders:
+
+| Placeholder | Expands to |
+|---|---|
+| `{speaker}` / `{mic}` | Zero-based speaker / mic index |
+| `{speaker1}` / `{mic1}` | One-based speaker / mic index |
+| `{speaker_name}` | The speaker's `name` from its `speaker_profiles` entry |
+| `{mic_name}` | The mic position's name from `mic_names` (set per position on the Config tab) |
+
+For example, with speaker 3 named `Main L` and mic position 0 named `MLP`:
+
+```json
+"measurement_pattern": "measurements/{speaker_name}_{mic_name}.wav"
+```
+
+resolves that crosspoint to `measurements/Main L_MLP.wav`. Mic position names are edited in the Config tab under **Mic positions** (or set directly as the `mic_names` list); an empty name falls back to `mic{index}`. In the GUI, the Measurements tab's folder-assign helper accepts the same template.
 
 ## Configuration Reference
 
@@ -163,7 +189,7 @@ An up-to-date example lives in `example_config.json` (regenerate any time from t
 | `num_inputs` | `num_speakers` | Number of input channels (K), e.g. `2` for stereo sources. Produces N x K FIR filters. |
 | `sample_rate` | from WAVs | Expected sample rate. Optional for WAV input (read from files, mismatches rejected); required for text IRs without a time column. |
 | `measurements` | — | Explicit list of `{speaker, mic, path}` entries, one IR per speaker/mic pair. |
-| `measurement_pattern` | — | Alternative to `measurements`: filename template such as `"measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"`. |
+| `measurement_pattern` | — | Alternative to `measurements`: filename template such as `"measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"`. Supports `{speaker}`, `{mic}`, `{speaker1}`, `{mic1}`, `{speaker_name}` and `{mic_name}` (see [Measurement Naming](#measurement-naming)). |
 | `wav_channel` | `0` | Channel to read from multichannel measurement WAVs. |
 | `ir_crop_start_sample` / `ir_crop_start_ms` | `0` | Discard this much of the start of every IR before processing (both add together). Use only if all exports share a common dead-time; never crop per-measurement, that destroys relative timing. |
 | `ir_length_samples` | longest IR | Length to which all IRs are cropped/zero-padded. Sets the low-frequency resolution of the measurement data. |
@@ -211,6 +237,7 @@ An up-to-date example lives in `example_config.json` (regenerate any time from t
 |---|---|---|
 | `input_speakers` | all | Allowed speakers per input, e.g. `{"0": [0,1,2,3], "1": [0,1,2,4]}`. Blocked pairs are removed from the optimization and exported as all-zero FIRs. |
 | `mic_weights` | all ones | Relative importance of each mic position in the least-squares error (listening position highest). |
+| `mic_names` | — | Optional per-position display names, usable in `measurement_pattern` as `{mic_name}`. Empty entries fall back to `mic{index}`. |
 
 ### Smoothing and regularization
 

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from nicegui import ui
 from nicegui.testing import User
 from scipy.io import wavfile
 
@@ -57,6 +58,18 @@ async def test_validate_example_config(user: User) -> None:
     await user.open("/")
     user.find("Validate config").click()
     await user.should_see("Config is valid.")
+
+
+async def test_changing_speaker_count_updates_profiles(user: User) -> None:
+    """Regression: bumping the speaker count must rebuild the dependent
+    sections immediately, without needing the Force Refresh button."""
+    await user.open("/")
+    await user.should_see("Speaker 4")  # 5 speakers (0..4) from the example
+    speakers = next(
+        e for e in user.find("Speakers").elements if isinstance(e, ui.number)
+    )
+    speakers.set_value(6)
+    await user.should_see("Speaker 5")  # new profile card appears on its own
 
 
 async def test_validate_reports_issues(user: User) -> None:

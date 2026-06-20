@@ -347,6 +347,13 @@ class AppState:
         weights += [1.0] * (mics - len(weights))
         config["mic_weights"] = weights
 
+        # Mic position names (optional; usable in measurement_pattern as
+        # {mic_name}). Empty entries fall back to a default label.
+        names = list(config.get("mic_names") or [])
+        names = [str(n) for n in names[:mics]]
+        names += [""] * (mics - len(names))
+        config["mic_names"] = names
+
         # Routing mask.
         raw_routing = config.get("input_speakers")
         if raw_routing is not None:
@@ -409,6 +416,13 @@ class AppState:
 
     # ------------------------------------------------------------------
     # Measurement grid helpers
+
+    def mic_name(self, mic: int) -> str:
+        """Display name for a mic position, falling back to a default label."""
+        names = self.config.get("mic_names") or []
+        if 0 <= mic < len(names) and str(names[mic]).strip():
+            return str(names[mic])
+        return f"Mic {mic}"
 
     def measurement_grid(self) -> dict[tuple[int, int], str]:
         """Return {(mic, speaker): path} for explicit measurement entries."""

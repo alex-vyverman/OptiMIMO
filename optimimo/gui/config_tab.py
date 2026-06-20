@@ -1,10 +1,12 @@
 """Config tab: all solver parameters, grouped like the README reference.
 
-FUNDAMENTAL SOLUTION TO ORPHANED ELEMENTS:
-Input UI elements are built ONCE and bind directly to STATE.config.
-Only display-only sections use @ui.refreshable_method.
-This prevents the "parent slot deleted" issue because input elements
-are never recreated, so their callbacks remain valid.
+Every section is a ``@ui.refreshable_method`` and reads STATE.config when it is
+(re)built, so a section's displayed values always reflect the current config.
+Sections are rebuilt on the events that change the config out from under the
+widgets: ``refresh_all`` (load / new / force refresh) rebuilds everything, and
+``_refresh_dependent_sections`` rebuilds the dimension-dependent sections after
+a Dimensions edit. A section's own inputs never trigger a rebuild of that same
+section, which is what previously caused "parent slot deleted" errors.
 """
 
 from __future__ import annotations
@@ -145,55 +147,33 @@ class ConfigTab:
             self._output_section()
 
     def refresh_all(self) -> None:
-        """Refresh all refreshable sections.
-        
-        Only sections with conditional UI structure are refreshable:
-        - _file_bar: updates when config is loaded/saved
-        - _profiles_section: updates when speaker count changes
-        - _routing_section: updates when routing toggle changes
-        - _target_section: updates when target mode or curve source changes
-        
-        Static input sections (dimensions, filter, smoothing, output) are built
-        once and bind directly to STATE.config, so they don't need refreshing.
+        """Rebuild every section from the current STATE.config.
+
+        Called after events that replace or broadly change the config (load,
+        new, force refresh). Every section is refreshable and re-reads
+        STATE.config when rebuilt, so the displayed values always match the
+        config — no manual Force Refresh needed.
         """
         self._file_bar.refresh()
+        self._dimensions_section.refresh()
         self._profiles_section.refresh()
         self._routing_section.refresh()
         self._target_section.refresh()
-        if self.on_config_replaced is not None:
-            self.on_config_replaced()
-
-    def _refresh_dependent_sections(self) -> None:
-        """Refresh sections that depend on speaker/input/mic dimensions."""
-        self._profiles_section.refresh()
-        self._routing_section.refresh()
-        self._target_section.refresh()
-        if self.on_config_replaced is not None:
-            self.on_config_replaced()
-
-    def _refresh_dependent_sections(self) -> None:
-        """Refresh sections that depend on speaker/input/mic dimensions."""
-        self._profiles_section.refresh()
-        self._routing_section.refresh()
-        self._target_section.refresh()
-        if self.on_config_replaced is not None:
-            self.on_config_replaced()
-
-    def _refresh_dependent_sections(self) -> None:
-        """Refresh sections that depend on speaker/input/mic dimensions."""
-        self._profiles_section.refresh()
-        self._routing_section.refresh()
-        self._target_section.refresh()
+        self._filter_section.refresh()
+        self._smoothing_section.refresh()
+        self._output_section.refresh()
         if self.on_config_replaced is not None:
             self.on_config_replaced()
 
     def _refresh_dependent_sections(self) -> None:
         """Refresh sections that depend on speaker/input/mic dimensions.
         
-        Since input sections are no longer refreshable, this only refreshes
-        the file bar and notifies dependent components.
+        Triggered by the Dimensions inputs; deliberately does NOT refresh the
+        Dimensions section itself so the number field being edited keeps focus.
         """
-        self._file_bar.refresh()
+        self._profiles_section.refresh()
+        self._routing_section.refresh()
+        self._target_section.refresh()
         if self.on_config_replaced is not None:
             self.on_config_replaced()
 
@@ -292,6 +272,7 @@ class ConfigTab:
         STATE.normalize_config()
         self._refresh_dependent_sections()
 
+    @ui.refreshable_method
     def _dimensions_section(self) -> None:
         on_change = lambda: self._on_dimensions_change()  # noqa: E731
         with ui.expansion("Dimensions", icon="grid_view", value=True).classes("w-full"):
@@ -308,7 +289,6 @@ class ConfigTab:
                 _num("Sample rate", "sample_rate", 96000, fmt="%d",
                      tooltip="Expected sample rate in Hz. Read from WAV files; mismatches are rejected. Required for text IRs without a time column.")
 
-    @ui.refreshable_method
     @ui.refreshable_method
     def _profiles_section(self) -> None:
         with ui.expansion("Speaker profiles", icon="speaker", value=True).classes("w-full"):
@@ -346,10 +326,11 @@ class ConfigTab:
 
             ui.separator()
             with ui.row().classes("items-center gap-2"):
-                ui.label("Mic position weights").classes("font-medium")
-                _info("Relative importance of each mic position in the least-squares error. Set the listening position highest for best results there.")
+                ui.label("Mic positions").classes("font-medium")
+                _info("Name and least-squares weight per mic position. Set the listening position's weight highest. Names are optional and can be used in the measurement filename pattern via {mic_name}.")
             weights = STATE.config["mic_weights"]
-            with ui.row().classes("gap-2 flex-wrap"):
+            names = STATE.config["mic_names"]
+            with ui.row().classes("gap-3 flex-wrap items-start"):
                 for mic in range(STATE.num_mics()):
 
                     def on_weight(event, mic=mic) -> None:
@@ -358,11 +339,18 @@ class ConfigTab:
                         except (TypeError, ValueError):
                             pass
 
-                    ui.number(
-                        f"Mic {mic}", value=weights[mic], min=0, format="%.6g", on_change=on_weight
-                    ).classes("w-28")
+                    def on_name(event, mic=mic) -> None:
+                        names[mic] = str(event.value or "")
 
-    @ui.refreshable_method
+                    with ui.column().classes("gap-1"):
+                        ui.input(
+                            f"Mic {mic} name", value=names[mic], placeholder=f"Mic {mic}",
+                            on_change=on_name,
+                        ).props("dense outlined").classes("w-32")
+                        ui.number(
+                            "Weight", value=weights[mic], min=0, format="%.6g", on_change=on_weight
+                        ).classes("w-32")
+
     @ui.refreshable_method
     def _routing_section(self) -> None:
         with ui.expansion("Input routing", icon="route", value=True).classes("w-full"):
@@ -411,7 +399,6 @@ class ConfigTab:
 
                         ui.checkbox(value=speaker in allowed, on_change=on_check)
 
-    @ui.refreshable_method
     @ui.refreshable_method
     def _target_section(self) -> None:
         with ui.expansion("Target", icon="target", value=True).classes("w-full"):
@@ -593,6 +580,7 @@ class ConfigTab:
                 _num("Reference band high Hz", "_ref_high", 200.0,
                      tooltip="Upper bound of the reference band used for auto target level, regularization reference power, and anchored-mode level estimation.")
 
+    @ui.refreshable_method
     def _filter_section(self) -> None:
         with ui.expansion("Filter dimensions and protection", icon="tune", value=True).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):
@@ -614,6 +602,7 @@ class ConfigTab:
                 _toggle("Diagonal cut floor", "enforce_diagonal_cut_floor", False,
                         tooltip="Prevent the direct input-to-primary path from being cut below max_cut_db.")
 
+    @ui.refreshable_method
     def _smoothing_section(self) -> None:
         with ui.expansion("Smoothing and regularization", icon="blur_on", value=True).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):
@@ -627,6 +616,7 @@ class ConfigTab:
                 _num("Profile disable threshold", "profile_disable_threshold", 1.0e-4, fmt="%.2e",
                      tooltip="Profile weight below which a speaker counts as fully disabled at that frequency.")
 
+    @ui.refreshable_method
     def _output_section(self) -> None:
         with ui.expansion("Output", icon="output", value=True).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):

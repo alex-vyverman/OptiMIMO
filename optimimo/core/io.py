@@ -115,6 +115,29 @@ def load_impulse_response(path: Path, sample_rate: int | None, wav_channel: int)
     return load_text_ir(path, sample_rate=sample_rate)
 
 
+def _pattern_speaker_name(profiles: Any, speaker: int) -> str:
+    """Speaker name for use in ``measurement_pattern`` (``{speaker_name}``)."""
+    entry = None
+    if isinstance(profiles, dict):
+        entry = profiles.get(str(speaker), profiles.get(speaker))
+    elif isinstance(profiles, (list, tuple)) and speaker < len(profiles):
+        entry = profiles[speaker]
+    if isinstance(entry, dict):
+        name = entry.get("name")
+        if name:
+            return str(name)
+    return f"speaker{speaker}"
+
+
+def _pattern_mic_name(mic_names: Any, mic: int) -> str:
+    """Mic position name for use in ``measurement_pattern`` (``{mic_name}``)."""
+    if isinstance(mic_names, (list, tuple)) and mic < len(mic_names):
+        name = mic_names[mic]
+        if name is not None and str(name).strip():
+            return str(name)
+    return f"mic{mic}"
+
+
 def measurement_path_grid(config: Mapping[str, Any], base_dir: Path) -> list[list[Path]]:
     num_speakers = int(config["num_speakers"])
     num_mics = int(config["num_mic_positions"])
@@ -132,14 +155,25 @@ def measurement_path_grid(config: Mapping[str, Any], base_dir: Path) -> list[lis
             grid[mic][speaker] = resolve_path(entry["path"], base_dir)
     elif "measurement_pattern" in config:
         pattern = str(config["measurement_pattern"])
+        profiles = config.get("speaker_profiles") or {}
+        mic_names = config.get("mic_names") or []
         for mic in range(num_mics):
             for speaker in range(num_speakers):
-                formatted = pattern.format(
-                    speaker=speaker,
-                    mic=mic,
-                    speaker1=speaker + 1,
-                    mic1=mic + 1,
-                )
+                try:
+                    formatted = pattern.format(
+                        speaker=speaker,
+                        mic=mic,
+                        speaker1=speaker + 1,
+                        mic1=mic + 1,
+                        speaker_name=_pattern_speaker_name(profiles, speaker),
+                        mic_name=_pattern_mic_name(mic_names, mic),
+                    )
+                except (KeyError, IndexError, ValueError) as exc:
+                    raise ValueError(
+                        f"Invalid measurement_pattern {pattern!r}: {exc}. "
+                        "Available placeholders: {speaker} {mic} {speaker1} {mic1} "
+                        "{speaker_name} {mic_name}."
+                    ) from exc
                 grid[mic][speaker] = resolve_path(formatted, base_dir)
     else:
         raise ValueError("Config must provide either measurements or measurement_pattern.")
