@@ -84,6 +84,31 @@ def test_empty_names_are_skipped():
     assert _auto_assign(candidates, cells) == {}
 
 
+def test_word_boundary_prevents_substring_false_match():
+    """Regression: speaker "Sub M" must not match a REW title that
+    normalizes to "...3sub mlp..." (the bare substring "sub m" is a
+    prefix of "sub mlp"). Reported from a real REW import where
+    'L BW800_3sub_MLP' was being auto-assigned to the Sub M speaker."""
+    speakers = ["Sub L", "Sub M", "Sub R"]
+    mics = ["MLP"]
+    cells = _cells_for(speakers, mics)
+    candidates = [("uuid-1", "L BW800_3sub_MLP")]
+
+    result = _auto_assign(candidates, cells)
+
+    # None of the per-sub cells should claim a 3-sub-sum measurement.
+    assert result == {}
+
+
+def test_word_boundary_still_matches_legitimate_separators():
+    """Underscore between speaker name and mic name still counts as a
+    word boundary; we only want to *prevent* matches when there's no
+    boundary at all between the name and adjacent characters."""
+    cells = _cells_for(speakers=["Sub L"], mics=["MLP"])
+    candidates = [("Sub L_MLP.wav", "Sub L_MLP.wav")]
+    assert _auto_assign(candidates, cells) == {(0, 0): "Sub L_MLP.wav"}
+
+
 def test_rew_style_uuid_and_title_split():
     """Verify the value/label split: REW uses uuid as value, title as label."""
     cells = _cells_for(speakers=["Sub L"], mics=["MLP"])

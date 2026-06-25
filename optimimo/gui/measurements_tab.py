@@ -445,6 +445,15 @@ def _normalize_for_match(text: str) -> str:
     return " ".join(out.split())  # collapse runs of whitespace
 
 
+def _contains_as_words(label_norm: str, query_norm: str) -> bool:
+    """Whole-word substring check: query matches only when it appears at
+    token boundaries in the label, not as a prefix of a longer token.
+    Without this, "Sub M" would match "3sub_MLP" (which normalizes to
+    "3sub mlp"; the bare substring "sub m" is its prefix). Padding both
+    sides with spaces forces the match to start and end at a separator."""
+    return f" {query_norm} " in f" {label_norm} "
+
+
 def _auto_assign(
     candidates: list[tuple[str, str]],
     cells: list[tuple[int, int, str, str]],
@@ -452,12 +461,14 @@ def _auto_assign(
     """Greedy 1:1 name-based matching of candidates to (mic, speaker) cells.
 
     A candidate matches a cell when its label contains both the cell's
-    mic name and speaker name as substrings, comparing case-insensitively
-    and treating `_`, `-`, `.`, `/`, `\\` as separator-equivalent to
-    whitespace. Cells with fewer matching candidates are resolved first
-    so that a distinctively named file (e.g. "Front L_MLP.wav") wins its
-    only home before a more ambiguously named one (e.g. "L_MLP.wav")
-    can steal it.
+    mic name and speaker name as whole-word substrings, comparing
+    case-insensitively and treating `_`, `-`, `.`, `/`, `\\` as
+    separator-equivalent to whitespace. "Whole-word" matters: "Sub M"
+    must not match "3sub_MLP" just because the latter starts with
+    "sub m" once underscores are normalized to spaces. Cells with fewer
+    matching candidates are resolved first so that a distinctively named
+    file (e.g. "Front L_MLP.wav") wins its only home before a more
+    ambiguously named one (e.g. "L_MLP.wav") can steal it.
 
     `candidates`: [(value, label_for_matching)] — value is what gets stored
     (filename, REW uuid); label is what we search.
@@ -475,7 +486,8 @@ def _auto_assign(
         hits = [
             value
             for value, norm_label in norm_candidates
-            if m_n in norm_label and s_n in norm_label
+            if _contains_as_words(norm_label, m_n)
+            and _contains_as_words(norm_label, s_n)
         ]
         if hits:
             scored.append((len(hits), (mic, speaker), hits))
