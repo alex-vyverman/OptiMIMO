@@ -155,24 +155,60 @@ class MeasurementsTab:
             ui.notify("No .wav or .txt files in that folder", type="warning")
             return
         profiles = STATE.config["speaker_profiles"]
+        speakers = STATE.num_speakers()
         mics = STATE.num_mics()
         names = [p.name for p in files]
+
+        cells = [
+            (mic, speaker, STATE.mic_name(mic), profiles[str(speaker)]["name"])
+            for speaker in range(speakers)
+            for mic in range(mics)
+        ]
+        # Filenames are both value and label here.
+        candidates = [(n, n) for n in names]
+        preselected = _auto_assign(candidates, cells)
+        total_cells = speakers * mics
 
         with ui.dialog(value=True) as dialog, ui.card().classes("w-[44rem] max-w-full"):
             ui.label(f"Assign files from {folder}").classes("text-lg font-medium")
             ui.label(
                 "Pick the file for each speaker/mic pair. Fields left empty are not changed."
-            ).classes("text-xs text-gray-500 mb-3")
+            ).classes("text-xs text-gray-500")
+            ui.label(
+                f"Auto-assigned {len(preselected)} of {total_cells} cells "
+                "based on matching speaker/mic names in filenames."
+            ).classes("text-xs text-cyan-600 mb-3")
             selects: dict[tuple[int, int], Any] = {}
+
+            def update_options() -> None:
+                taken = {s.value for s in selects.values() if s.value}
+                for select in selects.values():
+                    current = select.value
+                    new_options = [
+                        n for n in names if n == current or n not in taken
+                    ]
+                    if list(select.options) != new_options:
+                        select.options = new_options
+                        select.update()
+
+            def on_select_change() -> None:
+                update_options()
+
             with ui.scroll_area().classes("h-96 w-full"):
-                for speaker in range(STATE.num_speakers()):
-                    ui.label(f"Speaker {speaker}: {profiles[str(speaker)]['name']}").classes(
-                        "font-medium mt-3 mb-1"
-                    )
+                for speaker in range(speakers):
+                    ui.label(
+                        f"Speaker {speaker}: {profiles[str(speaker)]['name']}"
+                    ).classes("font-medium mt-3 mb-1")
                     for mic in range(mics):
                         selects[(mic, speaker)] = ui.select(
-                            names, label=STATE.mic_name(mic), with_input=True, clearable=True
+                            list(names),
+                            value=preselected.get((mic, speaker)),
+                            label=STATE.mic_name(mic),
+                            with_input=True,
+                            clearable=True,
+                            on_change=lambda _e: on_select_change(),
                         ).classes("w-full")
+            update_options()
 
             def apply() -> None:
                 for (mic, speaker), select in selects.items():
@@ -277,12 +313,44 @@ class MeasurementsTab:
                     return
                 by_uuid.update({m["uuid"]: m for m in with_ir})
                 options = {m["uuid"]: f"{m['index']}: {m['title']}" for m in with_ir}
+
+                cells = [
+                    (mic, speaker, STATE.mic_name(mic), profiles[str(speaker)]["name"])
+                    for speaker in range(speakers)
+                    for mic in range(mics)
+                ]
+                # Match against the title only (not the index prefix); the index
+                # is just a stable display ordinal from REW.
+                candidates = [(m["uuid"], m["title"]) for m in with_ir]
+                preselected = _auto_assign(candidates, cells)
+                total_cells = speakers * mics
+
+                def update_options() -> None:
+                    taken = {s.value for s in selects.values() if s.value}
+                    for select in selects.values():
+                        current = select.value
+                        new_options = {
+                            uuid: label
+                            for uuid, label in options.items()
+                            if uuid == current or uuid not in taken
+                        }
+                        if dict(select.options) != new_options:
+                            select.options = new_options
+                            select.update()
+
+                def on_select_change() -> None:
+                    update_options()
+
                 with assign_area:
                     ui.label(
                         f"{len(with_ir)} measurement(s) available. "
                         "Pick the measurement for each speaker/mic pair; "
                         "fields left empty are skipped."
-                    ).classes("text-xs text-gray-500 mt-2 mb-1")
+                    ).classes("text-xs text-gray-500 mt-2")
+                    ui.label(
+                        f"Auto-assigned {len(preselected)} of {total_cells} cells "
+                        "based on matching speaker/mic names in measurement titles."
+                    ).classes("text-xs text-cyan-600 mb-1")
                     with ui.scroll_area().classes("h-80 w-full"):
                         for speaker in range(speakers):
                             ui.label(
@@ -290,11 +358,14 @@ class MeasurementsTab:
                             ).classes("font-medium mt-3 mb-1")
                             for mic in range(mics):
                                 selects[(mic, speaker)] = ui.select(
-                                    options,
+                                    dict(options),
+                                    value=preselected.get((mic, speaker)),
                                     label=STATE.mic_name(mic),
                                     with_input=True,
                                     clearable=True,
+                                    on_change=lambda _e: on_select_change(),
                                 ).classes("w-full")
+                    update_options()
                     with ui.row().classes("w-full justify-end gap-2 mt-3"):
                         ui.button("Cancel", on_click=dialog.close).props("flat")
                         ui.button(
@@ -363,6 +434,63 @@ class MeasurementsTab:
         ui.notify("Validating…", type="info")
         rows, summary = await run.io_bound(_validate_files, config, base_dir)
         self._validation_results.refresh(rows, summary)
+
+
+def _normalize_for_match(text: str) -> str:
+    """Lowercase and replace common separators with spaces so "Sub L",
+    "sub_l", and "sub-l" all compare equal as substrings."""
+    out = text.lower()
+    for sep in ("_", "-", ".", "/", "\\"):
+        out = out.replace(sep, " ")
+    return " ".join(out.split())  # collapse runs of whitespace
+
+
+def _auto_assign(
+    candidates: list[tuple[str, str]],
+    cells: list[tuple[int, int, str, str]],
+) -> dict[tuple[int, int], str]:
+    """Greedy 1:1 name-based matching of candidates to (mic, speaker) cells.
+
+    A candidate matches a cell when its label contains both the cell's
+    mic name and speaker name as substrings, comparing case-insensitively
+    and treating `_`, `-`, `.`, `/`, `\\` as separator-equivalent to
+    whitespace. Cells with fewer matching candidates are resolved first
+    so that a distinctively named file (e.g. "Front L_MLP.wav") wins its
+    only home before a more ambiguously named one (e.g. "L_MLP.wav")
+    can steal it.
+
+    `candidates`: [(value, label_for_matching)] — value is what gets stored
+    (filename, REW uuid); label is what we search.
+    `cells`: [(mic, speaker, mic_name, speaker_name)] from the GUI grid.
+
+    Returns {(mic, speaker): value} only for cells that got a match.
+    """
+    norm_candidates = [(value, _normalize_for_match(label)) for value, label in candidates]
+    scored: list[tuple[int, tuple[int, int], list[str]]] = []
+    for mic, speaker, mic_name, speaker_name in cells:
+        m_n = _normalize_for_match(mic_name)
+        s_n = _normalize_for_match(speaker_name)
+        if not m_n or not s_n:
+            continue
+        hits = [
+            value
+            for value, norm_label in norm_candidates
+            if m_n in norm_label and s_n in norm_label
+        ]
+        if hits:
+            scored.append((len(hits), (mic, speaker), hits))
+
+    scored.sort(key=lambda t: t[0])
+
+    result: dict[tuple[int, int], str] = {}
+    used: set[str] = set()
+    for _count, cell, hits in scored:
+        for value in hits:
+            if value not in used:
+                result[cell] = value
+                used.add(value)
+                break
+    return result
 
 
 def _validate_files(config: dict[str, Any], base_dir: Path) -> tuple[list[dict[str, Any]], str]:

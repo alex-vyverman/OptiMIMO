@@ -47,7 +47,9 @@ All solver parameters are grouped exactly as in the [Configuration Reference](#c
 
 ### Measurements tab
 
-A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory using a filename pattern, and every file is validated on load (existence, sample rate, length). An **Import from REW** button pulls impulse responses straight from a running REW instance over its HTTP API — see [Importing measurements from REW](#importing-measurements-from-rew-http-api) below.
+A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign helper bulk-fills the grid from a directory, and every file is validated on load (existence, sample rate, length). An **Import from REW** button pulls impulse responses straight from a running REW instance over its HTTP API — see [Importing measurements from REW](#importing-measurements-from-rew-http-api) below.
+
+Both the folder-assign and REW-import dialogs preselect each (speaker, mic) cell automatically when the filename (or REW measurement title) contains the speaker profile name and the mic position name as substrings. Matching is case-insensitive and treats `_`, `-`, `.`, `/`, `\` as equivalent to spaces, so "Sub L_MLP.wav" matches a Sub L / MLP cell just like "sub-l mlp.wav" would. Already-assigned candidates are hidden from other cells' dropdowns to avoid double-assignment.
 
 ### Importing measurements from REW (HTTP API)
 
