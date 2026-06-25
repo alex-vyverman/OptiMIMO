@@ -127,11 +127,14 @@ def suggest_target_delay_ms(
             if band_gd_ms.size == 0:
                 continue
             gd_robust = float(np.quantile(band_gd_ms, quantile))
+            ir = ir_matrix[m, s, :]
+            arrival_ms = float(int(np.argmax(np.abs(ir))) / sample_rate * 1000.0)
             per_measurement.append(
                 {
                     "speaker": s,
                     "mic": m,
                     "max_group_delay_ms": gd_robust,
+                    "direct_arrival_ms": arrival_ms,
                 }
             )
             if gd_robust > max_gd_ms:

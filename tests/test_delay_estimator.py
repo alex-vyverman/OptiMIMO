@@ -194,6 +194,29 @@ def test_pure_delay_estimate_unchanged_by_h_smoothing(tmp_path):
     assert abs(raw["max_group_delay_ms"] - smoothed["max_group_delay_ms"]) < 0.5
 
 
+def test_per_measurement_reports_direct_arrival_time(tmp_path):
+    """Each per-measurement entry exposes argmax(|IR|) / sample_rate as
+    direct_arrival_ms. Lets the diagnostic UI surface bulk pre-roll per
+    measurement without needing to open each file in REW."""
+    direct_path = tmp_path / "spk0_mic0.wav"
+    delayed_path = tmp_path / "spk0_mic1.wav"
+    _write_ir(direct_path, _delta_ir(8192, 96))    # 2 ms peak
+    _write_ir(delayed_path, _delta_ir(8192, 4800))  # 100 ms peak
+
+    cfg = _base_config(
+        [
+            {"speaker": 0, "mic": 0, "path": str(direct_path)},
+            {"speaker": 0, "mic": 1, "path": str(delayed_path)},
+        ],
+        num_mic_positions=2,
+    )
+    result = suggest_target_delay_ms(cfg, tmp_path)
+
+    by_pair = {(p["speaker"], p["mic"]): p for p in result["per_measurement"]}
+    assert abs(by_pair[(0, 0)]["direct_arrival_ms"] - 2.0) < 0.05
+    assert abs(by_pair[(0, 1)]["direct_arrival_ms"] - 100.0) < 0.05
+
+
 def test_per_measurement_breakdown_includes_all_pairs(tmp_path):
     ir1 = tmp_path / "spk0_mic0.wav"
     ir2 = tmp_path / "spk0_mic1.wav"

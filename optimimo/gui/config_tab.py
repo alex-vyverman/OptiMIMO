@@ -99,6 +99,7 @@ async def _show_delay_diagnostic() -> None:
             "key": f"s{p['speaker']}-m{p['mic']}",
             "speaker": f"{p['speaker']}: {profiles.get(str(p['speaker']), {}).get('name', '?')}",
             "mic": STATE.mic_name(p["mic"]),
+            "arrival_ms": round(p.get("direct_arrival_ms", 0.0), 1),
             "delay_ms": round(p["max_group_delay_ms"], 1),
             "_outlier": p["max_group_delay_ms"] >= highlight_threshold,
         }
@@ -147,6 +148,13 @@ async def _show_delay_diagnostic() -> None:
                         "label": "Mic",
                         "field": "mic",
                         "align": "left",
+                        "sortable": True,
+                    },
+                    {
+                        "name": "arrival_ms",
+                        "label": "IR peak (ms)",
+                        "field": "arrival_ms",
+                        "align": "right",
                         "sortable": True,
                     },
                     {
