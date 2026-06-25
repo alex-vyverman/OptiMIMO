@@ -288,7 +288,7 @@ By default the snippet references WAV convolution filters (`output_format` must 
 
 ## Important DSP Notes
 
-Choose `target_delay_ms` large enough to make the inverse causal. If diagnostics warn about wrap-point energy, increase `target_delay_ms`, `fft_size`, or `filter_taps`.
+Choose `target_delay_ms` large enough to make the inverse causal. If diagnostics warn about wrap-point energy, increase `target_delay_ms`, `fft_size`, or `filter_taps`. Click the **Estimate** button next to the Target delay field on the Config tab to compute the minimum tolerable value from the measurement set's worst-case group delay (plus a flat- or anchored-mode margin); the Run tab's Validate step issues the same warning when the current value is below the estimate.
 
 Two complex-smoothing options bound how surgical the correction is allowed to be:
 

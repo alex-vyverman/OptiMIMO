@@ -14,8 +14,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional
 
-from nicegui import ui
+from nicegui import run, ui
 
+from ..core.delay_estimator import suggest_target_delay_ms
 from .file_picker import pick_file
 from .state import STATE
 
@@ -23,6 +24,43 @@ from .state import STATE
 def _info(text: str) -> None:
     with ui.icon("info", size="xs").classes("text-gray-400 cursor-help"):
         ui.tooltip(text).props('max-width="320px"').classes("text-xs")
+
+
+async def _estimate_target_delay(target_field: ui.number) -> None:
+    """Pre-flight estimate from the measurement set, write into target_field."""
+    try:
+        estimate = await run.io_bound(
+            suggest_target_delay_ms, dict(STATE.config), STATE.base_dir
+        )
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        ui.notify(f"Cannot estimate: {exc}", type="negative")
+        return
+
+    if estimate["max_group_delay_ms"] <= 0.0:
+        ui.notify(
+            "Estimator found no usable measurements; assign IRs first.",
+            type="warning",
+        )
+        return
+
+    recommended = float(estimate["recommended_ms"])
+    target_field.set_value(round(recommended, 1))
+    STATE.config["target_delay_ms"] = round(recommended, 1)
+
+    detail = (
+        f"max group delay {estimate['max_group_delay_ms']:.1f} ms + "
+        f"{estimate['margin_ms']:.0f} ms {estimate['target_mode']}-mode margin "
+        f"-> {recommended:.1f} ms"
+    )
+    if estimate["constrained_by_fft"]:
+        ui.notify(
+            f"{detail}. Warning: exceeds the current fft_size/filter_taps budget "
+            f"({estimate['max_delay_budget_ms']:.1f} ms). Increase fft_size.",
+            type="warning",
+            timeout=10000,
+        )
+    else:
+        ui.notify(detail, type="positive", timeout=6000)
 
 
 def _num(label: str, key: str, default: float, *, fmt: str = "%.6g", tooltip: str | None = None, **kwargs) -> ui.number:
@@ -425,8 +463,16 @@ class ConfigTab:
                     on_change=on_mode,
                 ).classes("w-72")
                 _info("flat: identical house-curve target at all mics. anchored: target derived from each input's primary speaker, preserving natural arrival time and geometry.")
-                _num("Target delay ms", "target_delay_ms", 100.0,
+                target_delay_input = _num("Target delay ms", "target_delay_ms", 100.0,
                      tooltip="Bulk delay built into the target so the inverse can be causal. Becomes system latency. Flat mode needs ~180ms; anchored tolerates ~80-100ms.")
+                ui.button(
+                    "Estimate",
+                    icon="auto_fix_high",
+                    on_click=lambda: _estimate_target_delay(target_delay_input),
+                ).props("flat dense").tooltip(
+                    "Compute the minimum tolerable target delay from the measurement set's "
+                    "group delay; fills this field with a recommendation including margin."
+                )
                 _toggle("Auto target level", "auto_target_level", True,
                         tooltip="Scale the target from the median measured in-band response power, so results don't depend on absolute REW export level.")
 

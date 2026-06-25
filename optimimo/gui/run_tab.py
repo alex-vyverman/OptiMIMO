@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 
 from nicegui import run, ui
 
+from ..core.delay_estimator import suggest_target_delay_ms
 from ..core.io import load_measurement_matrix, resolve_target_curve
 from ..core.pipeline import SolveCancelled, export, solve, validate_config
 from .config_tab import apply_pending_fields
@@ -47,28 +48,74 @@ class RunTab:
             self._validate_results()
 
     @ui.refreshable_method
-    def _validate_results(self, issues: Optional[list[tuple[str, str]]] = None) -> None:
-        if issues is None:
+    def _validate_results(
+        self,
+        issues: Optional[list[tuple[str, str]]] = None,
+        delay_warning: Optional[str] = None,
+    ) -> None:
+        if issues is None and delay_warning is None:
             return
         if not issues:
             with ui.row().classes("items-center gap-2 mt-3"):
                 ui.icon("check_circle").classes("text-positive")
                 ui.label("Config is valid.").classes("text-positive font-medium")
-            return
-        with ui.column().classes("gap-1 mt-3"):
-            for field, message in issues:
-                with ui.row().classes("items-start gap-2"):
-                    ui.icon("error").classes("text-negative text-sm mt-0.5")
-                    ui.label(f"{field}: {message}").classes("text-negative text-sm")
+        else:
+            with ui.column().classes("gap-1 mt-3"):
+                for field, message in issues or []:
+                    with ui.row().classes("items-start gap-2"):
+                        ui.icon("error").classes("text-negative text-sm mt-0.5")
+                        ui.label(f"{field}: {message}").classes("text-negative text-sm")
+        if delay_warning:
+            with ui.row().classes("items-start gap-2 mt-2"):
+                ui.icon("warning").classes("text-warning text-sm mt-0.5")
+                ui.label(delay_warning).classes("text-warning text-sm")
 
-    def _do_validate(self) -> None:
+    async def _do_validate(self) -> None:
         apply_pending_fields()
         issues = validate_config(STATE.config)
-        self._validate_results.refresh(issues)
+        delay_warning = await self._delay_preflight()
+        self._validate_results.refresh(issues, delay_warning)
         if issues:
             ui.notify(f"{len(issues)} issue(s) found", type="negative")
+        elif delay_warning:
+            ui.notify("Config valid, but check target delay", type="warning")
         else:
             ui.notify("Config is valid", type="positive")
+
+    async def _delay_preflight(self) -> Optional[str]:
+        """Estimate min target delay; warn when current value is too small.
+
+        Returns None when measurements are unavailable, when the estimate
+        is below the current value (no warning needed), or when anything
+        goes wrong during the estimate (silently skipped — the run will
+        still fire the post-solve wrap-energy diagnostic).
+        """
+        if "measurements" not in STATE.config and "measurement_pattern" not in STATE.config:
+            return None
+        try:
+            estimate = await run.io_bound(
+                suggest_target_delay_ms, dict(STATE.config), STATE.base_dir
+            )
+        except (FileNotFoundError, ValueError, KeyError):
+            return None
+
+        current = float(estimate["current_ms"])
+        recommended = float(estimate["recommended_ms"])
+        if recommended <= current + 1.0:
+            return None
+        msg = (
+            f"target_delay_ms is {current:.1f} ms but the measurement set's "
+            f"group delay suggests at least {recommended:.1f} ms "
+            f"(max gd {estimate['max_group_delay_ms']:.1f} + {estimate['margin_ms']:.0f} ms "
+            f"{estimate['target_mode']}-mode margin). The solve may trip the wrap-energy "
+            "diagnostic. Click 'Estimate' on the Config tab to apply."
+        )
+        if estimate["constrained_by_fft"]:
+            msg += (
+                f" Also: the recommendation exceeds the {estimate['max_delay_budget_ms']:.1f} ms "
+                "fft_size/filter_taps budget — increase fft_size."
+            )
+        return msg
 
     # ------------------------------------------------------------------
     # Solve
@@ -125,10 +172,17 @@ class RunTab:
             return
         apply_pending_fields()
         issues = validate_config(STATE.config)
-        self._validate_results.refresh(issues)
+        delay_warning = await self._delay_preflight() if not issues else None
+        self._validate_results.refresh(issues, delay_warning)
         if issues:
             ui.notify("Fix config issues before running", type="negative")
             return
+        if delay_warning:
+            ui.notify(
+                "target_delay_ms may be too low — see warning above. Solving anyway.",
+                type="warning",
+                timeout=5000,
+            )
 
         STATE.running = True
         STATE.last_error = ""
