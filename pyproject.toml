@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "optimimo"
-version = "0.1.0"
+version = "1.1.1"
 description = "MIMO room-correction FIR matrix solver for REW measurements and CamillaDSP"
 readme = "README.md"
 requires-python = ">=3.9"
