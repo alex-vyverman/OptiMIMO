@@ -1,8 +1,14 @@
-# OptiMIMO
+<p align="center">
+  <img src="images/optimimo-FULL.png" alt="OptiMIMO — MIMO Room Optimization" width="600">
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml/badge.svg)](https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+"></a>
+  <a href="https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml"><img src="https://github.com/alex-vyverman/OptiMIMO/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+</p>
+
+# OptiMIMO
 
 *MIMO Room Correction FIR Matrix Solver*
 

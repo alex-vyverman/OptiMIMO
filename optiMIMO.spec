@@ -227,6 +227,15 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Platform-specific icon: .icns on macOS (used by the .app BUNDLE),
+# .ico on Windows (embedded into the .exe).
+if sys.platform == 'darwin':
+    _icon_path = os.path.join(SPECPATH, 'images', 'optimimo.icns')
+elif sys.platform == 'win32':
+    _icon_path = os.path.join(SPECPATH, 'images', 'optimimo.ico')
+else:
+    _icon_path = None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -249,13 +258,14 @@ exe = EXE(
     target_arch=_target_arch,
     codesign_identity=None,
     entitlements_file=None,
+    icon=_icon_path,
 )
 
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
         name='OptiMIMO.app',
-        icon=None,
+        icon=_icon_path,
         bundle_identifier='com.alexvyverman.optimimo',
         version=_version,
         info_plist={
