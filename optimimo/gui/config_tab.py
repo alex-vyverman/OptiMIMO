@@ -763,6 +763,8 @@ class ConfigTab:
                      tooltip="Length of the exported FIR filters. Determines how long a correction can ring. 65536 taps at 96 kHz is 683 ms.")
                 _num("FFT size (0 = auto)", "fft_size", 0, fmt="%d",
                      tooltip="Solve resolution. Must be at least ir_length + filter_taps - 1. Auto picks the next power of two. Larger values give the inverse more time to decay before the circular wrap point.")
+                _num("IR crop start (ms)", "ir_crop_start_ms", 0.0,
+                     tooltip="Discard this much from the start of every IR before processing. Use when all exports share a common bulk pre-roll (e.g. REW timing-reference offset). Never crop per-measurement, that destroys relative timing. Applied symmetrically; use the Show diagnostic dialog to see each IR's peak position before choosing a value.")
                 _num("IR length samples (0 = auto)", "ir_length_samples", 0, fmt="%d",
                      tooltip="Length to which all IRs are cropped/zero-padded. Sets the low-frequency resolution of the measurement data.")
                 _num("Fade-out samples", "fade_out_samples", 2048, fmt="%d",
