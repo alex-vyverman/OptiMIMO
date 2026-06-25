@@ -68,6 +68,114 @@ async def _estimate_target_delay(target_field: ui.number) -> None:
         ui.notify(detail, type="positive", timeout=6000)
 
 
+async def _show_delay_diagnostic() -> None:
+    """Per-measurement breakdown of the delay estimator, in a dialog.
+
+    Sorts measurements descending by group delay so the worst offenders
+    are at the top. Lets the user identify which speaker/mic pair is
+    driving the recommendation up — usually points back to a single REW
+    file with excessive pre-roll or a misaligned timing reference.
+    """
+    try:
+        estimate = await run.io_bound(
+            suggest_target_delay_ms, dict(STATE.config), STATE.base_dir
+        )
+    except (FileNotFoundError, ValueError, KeyError) as exc:
+        ui.notify(f"Cannot run estimator: {exc}", type="negative")
+        return
+
+    per_meas = sorted(
+        estimate["per_measurement"],
+        key=lambda p: p["max_group_delay_ms"],
+        reverse=True,
+    )
+    profiles = STATE.config.get("speaker_profiles", {}) or {}
+    max_gd = float(estimate["max_group_delay_ms"])
+    # Highlight any row within 80% of the worst — those are the cases
+    # actually driving the recommendation.
+    highlight_threshold = max_gd * 0.8 if max_gd > 0 else 0.0
+    rows = [
+        {
+            "key": f"s{p['speaker']}-m{p['mic']}",
+            "speaker": f"{p['speaker']}: {profiles.get(str(p['speaker']), {}).get('name', '?')}",
+            "mic": STATE.mic_name(p["mic"]),
+            "delay_ms": round(p["max_group_delay_ms"], 1),
+            "_outlier": p["max_group_delay_ms"] >= highlight_threshold,
+        }
+        for p in per_meas
+    ]
+
+    smoothing_note = (
+        f" with 1/{estimate['h_smoothing_fraction']:g}-oct H smoothing"
+        if estimate["h_smoothing_applied"]
+        else " (no H smoothing)"
+    )
+
+    with ui.dialog(value=True) as dialog, ui.card().classes("w-[42rem] max-w-full"):
+        ui.label("Target delay estimator — per-measurement breakdown").classes(
+            "text-lg font-medium"
+        )
+        ui.label(
+            f"Worst-case group delay {max_gd:.1f} ms{smoothing_note} + "
+            f"{estimate['margin_ms']:.0f} ms {estimate['target_mode']}-mode margin "
+            f"→ recommended {estimate['recommended_ms']:.1f} ms"
+        ).classes("text-xs text-gray-400 mt-1 mb-2")
+        if estimate["constrained_by_fft"]:
+            ui.label(
+                f"Recommendation exceeds the {estimate['max_delay_budget_ms']:.1f} ms "
+                "fft_size/filter_taps budget; increase fft_size."
+            ).classes("text-warning text-xs mb-2")
+        for issue in estimate.get("issues", []):
+            ui.label(issue).classes("text-warning text-xs")
+
+        if not rows:
+            ui.label("No usable measurements were found.").classes(
+                "text-orange-500 text-sm mt-2"
+            )
+        else:
+            table = ui.table(
+                columns=[
+                    {
+                        "name": "speaker",
+                        "label": "Speaker",
+                        "field": "speaker",
+                        "align": "left",
+                        "sortable": True,
+                    },
+                    {
+                        "name": "mic",
+                        "label": "Mic",
+                        "field": "mic",
+                        "align": "left",
+                        "sortable": True,
+                    },
+                    {
+                        "name": "delay_ms",
+                        "label": "Group delay (ms)",
+                        "field": "delay_ms",
+                        "align": "right",
+                        "sortable": True,
+                    },
+                ],
+                rows=rows,
+                row_key="key",
+            ).classes("w-full text-xs mt-2").props("dense flat")
+            # Color the worst-case rows so users see at a glance which
+            # measurements drove the recommendation.
+            table.add_slot(
+                "body-cell-delay_ms",
+                r"""
+                <q-td :props="props"
+                      :class="props.row._outlier ? 'text-warning' : ''">
+                  {{ props.value }}
+                </q-td>
+                """,
+            )
+
+        with ui.row().classes("w-full justify-end gap-2 mt-3"):
+            ui.button("Close", on_click=dialog.close).props("flat")
+
+
 def _num(label: str, key: str, default: float, *, fmt: str = "%.6g", tooltip: str | None = None, **kwargs) -> ui.number:
     """Number input that binds directly to STATE.config[key].
     
@@ -477,6 +585,14 @@ class ConfigTab:
                 ).props("flat dense").tooltip(
                     "Compute the minimum tolerable target delay from the measurement set's "
                     "group delay; fills this field with a recommendation including margin."
+                )
+                ui.button(
+                    "Show diagnostic",
+                    icon="bug_report",
+                    on_click=_show_delay_diagnostic,
+                ).props("flat dense").tooltip(
+                    "Open a per-measurement breakdown so you can see which speaker/mic "
+                    "pair is driving the recommendation."
                 )
                 _toggle("Auto target level", "auto_target_level", True,
                         tooltip="Scale the target from the median measured in-band response power, so results don't depend on absolute REW export level.")
