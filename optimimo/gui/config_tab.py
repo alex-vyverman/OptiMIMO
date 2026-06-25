@@ -47,8 +47,13 @@ async def _estimate_target_delay(target_field: ui.number) -> None:
     target_field.set_value(round(recommended, 1))
     STATE.config["target_delay_ms"] = round(recommended, 1)
 
+    smoothing_note = (
+        f" (with 1/{estimate['h_smoothing_fraction']:g}-oct H smoothing applied)"
+        if estimate["h_smoothing_applied"]
+        else ""
+    )
     detail = (
-        f"max group delay {estimate['max_group_delay_ms']:.1f} ms + "
+        f"max group delay {estimate['max_group_delay_ms']:.1f} ms{smoothing_note} + "
         f"{estimate['margin_ms']:.0f} ms {estimate['target_mode']}-mode margin "
         f"-> {recommended:.1f} ms"
     )

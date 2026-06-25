@@ -6,6 +6,17 @@ forward in time so it can be a stable causal FIR. The minimum delay
 needed is roughly the worst-case group delay of the measured matrix
 inside each speaker's correction band, plus a margin so the inverse
 can develop without spilling into the FFT wrap point.
+
+The estimator mirrors the solver's preprocessing: when
+``h_smoothing_fraction`` is set, the same complex smoothing is applied
+to the spectrum before group delay is read off. With heavy smoothing
+the inverse the solver actually computes is much smoother than the
+raw measurements imply, so a smoothing-aware estimate is materially
+smaller (and closer to what the solve will tolerate).
+
+``x_smoothing_fraction`` happens after the solve and bounds FIR Q rather
+than changing the inverse's required bulk delay, so it does not enter
+the estimate.
 """
 
 from __future__ import annotations
@@ -15,7 +26,9 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from ..util import next_power_of_two
 from .io import load_measurement_matrix
+from .smoothing import fractional_octave_complex_smooth
 
 
 def suggest_target_delay_ms(
@@ -57,9 +70,32 @@ def suggest_target_delay_ms(
     sample_rate, ir_matrix = load_measurement_matrix(config, base_dir)
     num_mics, num_speakers, ir_length = ir_matrix.shape
 
-    nfft = max(ir_length, min_nfft)
+    # Match the solver's FFT resolution so the smoothing produces the
+    # same spectrum the solver will see. Use the configured fft_size
+    # when present, otherwise the same default the pipeline derives.
+    filter_taps = int(config.get("filter_taps", 8192))
+    configured_fft_size = int(config.get("fft_size", 0) or 0)
+    if configured_fft_size > 0:
+        nfft = configured_fft_size
+    else:
+        nfft = max(min_nfft, next_power_of_two(ir_length + filter_taps - 1))
+
     freqs = np.fft.rfftfreq(nfft, d=1.0 / sample_rate)
     omega = 2.0 * np.pi * freqs
+
+    # Build the same spectrum the solver builds: rfft over time, then
+    # pivot the frequency axis to the front. Apply h smoothing here if
+    # configured, with the same de-rotation by direct-arrival time.
+    h_freq = np.fft.rfft(ir_matrix, n=nfft, axis=2)
+    h_freq = np.moveaxis(h_freq, 2, 0)
+    h_freq = np.ascontiguousarray(h_freq)
+    smoothing_fraction = float(config.get("h_smoothing_fraction", 0.0) or 0.0)
+    smoothing_applied = False
+    if smoothing_fraction > 0.0:
+        h_freq = fractional_octave_complex_smooth(
+            h_freq, freqs, ir_matrix, sample_rate, smoothing_fraction
+        )
+        smoothing_applied = True
 
     profiles = config.get("speaker_profiles", {}) or {}
     issues: list[str] = []
@@ -82,10 +118,9 @@ def suggest_target_delay_ms(
             continue
 
         for m in range(num_mics):
-            ir = ir_matrix[m, s, :]
-            if not np.any(ir):
+            spectrum = h_freq[:, m, s]
+            if not np.any(spectrum):
                 continue
-            spectrum = np.fft.rfft(ir, n=nfft)
             phase = np.unwrap(np.angle(spectrum))
             gd_seconds = -np.gradient(phase, omega)
             band_gd_ms = gd_seconds[band_mask] * 1000.0
@@ -135,5 +170,7 @@ def suggest_target_delay_ms(
         "max_delay_budget_ms": max_delay_budget_ms,
         "per_measurement": per_measurement,
         "sample_rate": sample_rate,
+        "h_smoothing_applied": smoothing_applied,
+        "h_smoothing_fraction": smoothing_fraction if smoothing_applied else 0.0,
         "issues": issues,
     }

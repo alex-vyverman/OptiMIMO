@@ -142,6 +142,58 @@ def test_fft_budget_constraint_is_flagged(tmp_path):
     assert any("exceeds" in issue for issue in result["issues"])
 
 
+def test_h_smoothing_reduces_estimate(tmp_path):
+    """A comb-filtered IR (direct + reflection) has sharp group-delay
+    peaks at the comb notches. With h_smoothing on, the estimator sees
+    the same flattened spectrum the solver does, and the 99th-percentile
+    group delay drops below the raw measurement's value."""
+    ir = np.zeros(8192, dtype=np.float32)
+    ir[480] = 1.0    # direct at 10 ms
+    ir[960] = 0.7    # reflection at 20 ms
+    ir_path = tmp_path / "spk0_mic0.wav"
+    _write_ir(ir_path, ir)
+
+    cfg_raw = _base_config(
+        [{"speaker": 0, "mic": 0, "path": str(ir_path)}],
+        h_smoothing_fraction=0.0,
+    )
+    cfg_smooth = _base_config(
+        [{"speaker": 0, "mic": 0, "path": str(ir_path)}],
+        h_smoothing_fraction=6.0,
+    )
+
+    raw = suggest_target_delay_ms(cfg_raw, tmp_path)
+    smoothed = suggest_target_delay_ms(cfg_smooth, tmp_path)
+
+    assert raw["h_smoothing_applied"] is False
+    assert smoothed["h_smoothing_applied"] is True
+    assert smoothed["h_smoothing_fraction"] == 6.0
+    # Smoothing must materially lower the worst-case group delay.
+    assert smoothed["max_group_delay_ms"] < raw["max_group_delay_ms"] - 1.0
+
+
+def test_pure_delay_estimate_unchanged_by_h_smoothing(tmp_path):
+    """A pure-delta IR has constant group delay across all frequencies,
+    so smoothing should not change the estimate beyond noise floor."""
+    delay_samples = 480
+    ir_path = tmp_path / "spk0_mic0.wav"
+    _write_ir(ir_path, _delta_ir(8192, delay_samples))
+
+    cfg_raw = _base_config(
+        [{"speaker": 0, "mic": 0, "path": str(ir_path)}],
+        h_smoothing_fraction=0.0,
+    )
+    cfg_smooth = _base_config(
+        [{"speaker": 0, "mic": 0, "path": str(ir_path)}],
+        h_smoothing_fraction=6.0,
+    )
+
+    raw = suggest_target_delay_ms(cfg_raw, tmp_path)
+    smoothed = suggest_target_delay_ms(cfg_smooth, tmp_path)
+
+    assert abs(raw["max_group_delay_ms"] - smoothed["max_group_delay_ms"]) < 0.5
+
+
 def test_per_measurement_breakdown_includes_all_pairs(tmp_path):
     ir1 = tmp_path / "spk0_mic0.wav"
     ir2 = tmp_path / "spk0_mic1.wav"
