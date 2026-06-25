@@ -13,6 +13,12 @@ from .measurements_tab import MeasurementsTab
 from .run_tab import RunTab
 from .state import STATE
 
+# Transparent-background glyph for the dark header and browser favicon.
+# Path is computed from this file's location so it resolves correctly both
+# in dev (optimimo/assets/...) and when frozen by PyInstaller (which
+# extracts the optimimo package tree under sys._MEIPASS).
+_GLYPH = Path(__file__).resolve().parent.parent / "assets" / "optimimo-glyph.png"
+
 CUSTOM_CSS = """
 /* ---------- Base ---------- */
 body {
@@ -343,7 +349,9 @@ def index() -> None:
 
     with ui.header().classes("items-center px-6"):
         with ui.row().classes("items-center gap-3"):
-            ui.icon("graphic_eq").classes("text-2xl").style("color: #00E5FF; filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.5));")
+            ui.image(str(_GLYPH)).classes("h-8 w-8").style(
+                "filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.4));"
+            )
             ui.label("OptiMIMO").classes("text-lg font-semibold tracking-tight")
         ui.space()
         ui.label().bind_text_from(
@@ -388,6 +396,7 @@ def main() -> None:
 
     ui.run(
         title="OptiMIMO",
+        favicon=str(_GLYPH) if _GLYPH.is_file() else None,
         port=args.port,
         reload=False,
         show=not args.no_browser,

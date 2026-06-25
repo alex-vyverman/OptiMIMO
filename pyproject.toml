@@ -56,3 +56,6 @@ gui = [
 
 [tool.setuptools.packages.find]
 include = ["optimimo*"]
+
+[tool.setuptools.package-data]
+optimimo = ["assets/*"]

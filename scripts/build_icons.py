@@ -110,8 +110,26 @@ def crop_glyph_master() -> Image.Image:
 
 
 def write_png(img: Image.Image, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="PNG", optimize=True)
     print(f"  wrote {path.relative_to(REPO)} ({path.stat().st_size // 1024} KB)")
+
+
+def make_transparent(img: Image.Image) -> Image.Image:
+    """Key out the off-white background so the glyph reads on dark UI.
+
+    Maps pixel luminance to alpha: pure off-white (luma >= 240) goes
+    fully transparent, dark content stays fully opaque, and the soft
+    transition keeps anti-aliased edges smooth.
+    """
+    arr = np.array(img).astype(np.int16)
+    luma = arr[..., :3].mean(axis=2)
+    # Linear ramp: luma 240 -> alpha 0, luma 180 -> alpha 255
+    alpha = np.clip((240 - luma) * (255.0 / 60.0), 0, 255).astype(np.uint8)
+    # Don't make a pixel more opaque than it originally was.
+    alpha = np.minimum(alpha, arr[..., 3].astype(np.uint8))
+    arr[..., 3] = alpha
+    return Image.fromarray(arr.astype(np.uint8), mode="RGBA")
 
 
 def build_icns(master: Image.Image, out_path: Path) -> None:
@@ -147,11 +165,18 @@ def main() -> None:
     print(f"Cropping glyph from {SOURCE.relative_to(REPO)}")
     master = crop_glyph_master()
 
-    glyph_png = IMAGES_DIR / "optimimo-glyph.png"
-    write_png(master, glyph_png)
-
+    # Opaque master + OS icons keep the off-white background — Dock and
+    # Launchpad expect filled rectangles and apply their own rounded mask.
+    write_png(master, IMAGES_DIR / "optimimo-glyph.png")
     build_icns(master, IMAGES_DIR / "optimimo.icns")
     build_ico(master, IMAGES_DIR / "optimimo.ico")
+
+    # Transparent variant for use inside the dark-themed GUI header.
+    # Sized to 256px so retina headers stay sharp without bloating the
+    # bundled package.
+    transparent = make_transparent(master)
+    runtime_glyph = transparent.resize((256, 256), Image.LANCZOS)
+    write_png(runtime_glyph, REPO / "optimimo" / "assets" / "optimimo-glyph.png")
 
 
 if __name__ == "__main__":
