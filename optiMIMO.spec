@@ -8,8 +8,13 @@ Usage:
 import os
 import platform
 import sys
+import tomllib
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, collect_dynamic_libs
+
+_pyproject = tomllib.loads(Path(SPECPATH).joinpath('pyproject.toml').read_text())
+_version = _pyproject['project']['version']
 
 
 def _collect_extension_modules(package_name):
@@ -57,19 +62,6 @@ scipy_extensions = _collect_extension_modules('scipy')
 # Collect numpy: submodules, shared libs, AND C extension modules
 numpy_hiddenimports = collect_submodules('numpy')
 numpy_dynlibs = collect_dynamic_libs('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
-numpy_extensions = _collect_extension_modules('numpy')
 numpy_extensions = _collect_extension_modules('numpy')
 
 a = Analysis(
@@ -248,10 +240,31 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    # No terminal window when launched from Finder on macOS; the GUI lives
+    # in the browser. Keep the console on other platforms so server logs
+    # appear when run from a shell.
+    console=False if sys.platform == 'darwin' else True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=_target_arch,
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        exe,
+        name='OptiMIMO.app',
+        icon=None,
+        bundle_identifier='com.alexvyverman.optimimo',
+        version=_version,
+        info_plist={
+            'CFBundleName': 'OptiMIMO',
+            'CFBundleDisplayName': 'OptiMIMO',
+            'CFBundleShortVersionString': _version,
+            'CFBundleVersion': _version,
+            'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '11.0',
+            'NSPrincipalClass': 'NSApplication',
+        },
+    )

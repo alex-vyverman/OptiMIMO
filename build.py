@@ -97,11 +97,54 @@ def build(debug: bool = False) -> Path:
 
 
 def package_release(binary: Path) -> Path:
-    """Create a platform-specific release package."""
+    """Create a platform-specific release package.
+
+    On macOS the build output is a `.app` bundle, which we ad-hoc codesign
+    and zip with `ditto` so Finder sees one application file with bundle
+    structure preserved. On Linux/Windows we just copy the single binary.
+    """
     plat = get_platform_name()
     release_name = f"OptiMIMO-{plat}"
     release_dir = Path("releases")
     release_dir.mkdir(exist_ok=True)
+
+    if platform.system() == "Darwin":
+        app_bundle = Path("dist") / "OptiMIMO.app"
+        if not app_bundle.is_dir():
+            print(f"ERROR: Expected {app_bundle} bundle from PyInstaller", file=sys.stderr)
+            sys.exit(1)
+
+        # Ad-hoc codesign so Gatekeeper accepts the app via right-click → Open
+        # instead of refusing it as "damaged" on Apple Silicon. No paid
+        # Developer ID needed; users still see the unidentified-developer
+        # prompt on first launch.
+        print(f"Ad-hoc codesigning {app_bundle}")
+        subprocess.run(
+            ["codesign", "--force", "--deep", "--sign", "-", str(app_bundle)],
+            check=True,
+        )
+
+        output = release_dir / f"{release_name}.zip"
+        if output.exists():
+            output.unlink()
+        print(f"Zipping {app_bundle} -> {output}")
+        # ditto preserves resource forks, symlinks, and execute bits; the
+        # plain `zip` utility silently corrupts macOS bundles.
+        subprocess.run(
+            [
+                "ditto",
+                "-c", "-k",
+                "--sequesterRsrc",
+                "--keepParent",
+                str(app_bundle),
+                str(output),
+            ],
+            check=True,
+        )
+
+        size_mb = output.stat().st_size / (1024 * 1024)
+        print(f"Release: {output} ({size_mb:.1f} MB)")
+        return output
 
     ext = get_exe_extension()
     output = release_dir / f"{release_name}{ext}"
