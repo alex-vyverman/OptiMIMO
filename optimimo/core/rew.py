@@ -9,12 +9,14 @@ the pipeline can consume them exactly like any other measurement files.
 
 Timing is the whole point: the MIMO solve sums speakers at each mic position, so
 the relative time-of-flight between measurements must be physically correct.
-The API hands us each IR's ``startTime`` (seconds); we left-pad every IR by
-``round((startTime + pad) * fs)`` zero samples so that sample 0 of every written
-WAV corresponds to the *same* absolute reference time.  This preserves all
-time-of-flight differences and, because the placement is anchored to REW's
-absolute axis rather than a per-batch minimum, stays consistent across separate
-import batches.
+REW returns each IR with roughly one second of pre-peak lead-in, so its data
+``startTime`` sits about a second *before* the real arrival. We therefore anchor
+placement on each IR's absolute direct-peak time (REW's robust
+``timeOfIRPeakSeconds`` where available, else the impulse peak) and position the
+peak at a small fixed pre-roll plus that IR's arrival relative to the earliest
+measurement — trimming the long lead-in while preserving every inter-measurement
+time-of-flight difference. The earliest arrival anchors the batch, so a whole
+grid imported together is internally consistent.
 
 Note that the API can only return correct relative timing if the measurements
 were captured with an acoustic (or loopback) timing reference in REW; it cannot
@@ -36,11 +38,10 @@ from scipy.io import wavfile
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4735
-# Fixed pre-roll added ahead of the earliest possible IR start so absolute
-# placement never needs a negative sample offset.  ~20 ms is a couple thousand
-# samples at typical rates — negligible, and comfortably covers the small
-# negative start times REW reports for left-windowed IRs.
-DEFAULT_PAD_MS = 20.0
+# Where the earliest-arriving IR's direct peak is placed in the written WAVs.
+# Later arrivals sit further in by their relative time-of-flight. A small value
+# keeps the IRs causal-looking (a short lead-in before the peak) for the solver.
+DEFAULT_PRE_ROLL_MS = 20.0
 
 
 class RewError(Exception):
@@ -113,6 +114,10 @@ def fetch_measurements(
                 "title": str(summary.get("title", f"Measurement {index}")),
                 "sample_rate": _maybe_int(summary.get("sampleRate")),
                 "has_ir": _summary_has_ir(summary),
+                # REW's own, robust IR timing on the timing-reference axis.
+                # Far more reliable than argmax for subwoofers (no sharp peak).
+                "peak_time": _maybe_float(summary.get("timeOfIRPeakSeconds")),
+                "start_time": _maybe_float(summary.get("timeOfIRStartSeconds")),
             }
         )
     measurements.sort(key=lambda m: _maybe_int(m["index"]) or 0)
@@ -173,20 +178,29 @@ def fetch_impulse_response(
 # Timing-aware WAV export
 
 
-def _placement_offsets(
-    start_times: Sequence[float], sample_rate: int, *, pad_ms: float = DEFAULT_PAD_MS
+def _placement_plan(
+    peak_times: Sequence[float],
+    peak_indices: Sequence[int],
+    sample_rate: int,
+    pre_roll_samples: int,
 ) -> list[int]:
-    """Leading zero-sample offset that places each IR on a common time axis.
+    """Per-IR leading pad (>=0) or trim (<0) to align IRs by direct-peak time.
 
-    Anchored to REW's absolute axis (offset = ``round((start + pad) * fs)``) so the
-    result is independent of which measurements happen to be in this batch.  A
-    measurement whose start is earlier than ``-pad`` is clamped to 0 rather than
-    shifting the whole set, to keep cross-batch placement stable.
+    Each IR's direct peak is positioned at ``pre_roll_samples`` plus that IR's
+    arrival relative to the earliest in the batch. ``peak_times`` are absolute
+    peak times on the timing-reference axis (seconds); ``peak_indices`` are where
+    that peak sits inside each returned IR. A positive result prepends zeros; a
+    negative result trims that many leading samples — stripping REW's ~1 s
+    pre-peak lead-in while preserving every inter-measurement time-of-flight.
     """
-    pad_seconds = pad_ms / 1000.0
-    return [
-        max(0, int(round((float(start) + pad_seconds) * sample_rate))) for start in start_times
-    ]
+    if not peak_times:
+        return []
+    min_peak = min(float(t) for t in peak_times)
+    plan: list[int] = []
+    for peak_time, peak_index in zip(peak_times, peak_indices):
+        target = pre_roll_samples + int(round((float(peak_time) - min_peak) * sample_rate))
+        plan.append(target - int(peak_index))
+    return plan
 
 
 def download_measurements_to_wavs(
@@ -195,23 +209,26 @@ def download_measurements_to_wavs(
     assignments: Sequence[Mapping[str, Any]],
     out_dir: Path | str,
     *,
-    pad_ms: float = DEFAULT_PAD_MS,
+    pre_roll_ms: float = DEFAULT_PRE_ROLL_MS,
     normalised: bool = False,
     timeout: float = 30.0,
 ) -> list[dict[str, Any]]:
     """Download assigned REW measurements and write timing-aligned WAV files.
 
     ``assignments`` is a sequence of ``{"mic", "speaker", "meas_id", "title",
-    "sample_rate"?}`` mappings.  Writes one 32-bit float mono WAV per assignment
-    to ``out_dir/spk{speaker:02d}_mic{mic:02d}.wav`` and returns the written
-    ``{"mic", "speaker", "path"}`` entries.  Raises ``RewError`` if the assigned
-    measurements do not all share one sample rate.
+    "sample_rate"?, "peak_time"?}`` mappings. Writes one 32-bit float mono WAV
+    per assignment to ``out_dir/spk{speaker:02d}_mic{mic:02d}.wav``, with each
+    IR's direct peak placed at a small pre-roll plus its arrival relative to the
+    earliest measurement (REW's long pre-peak lead-in trimmed). Returns the
+    written ``{"mic", "speaker", "path", "arrival_ms"?}`` entries; ``arrival_ms``
+    (the peak position in the WAV) is included when REW reported a peak time.
+    Raises ``RewError`` if the measurements do not all share one sample rate.
     """
     if not assignments:
         return []
     out_dir = Path(out_dir)
 
-    fetched: list[tuple[Mapping[str, Any], np.ndarray, float]] = []
+    fetched: list[tuple[Mapping[str, Any], np.ndarray, float, Optional[float]]] = []
     sample_rate: Optional[int] = None
     for item in assignments:
         samples, fs, start_time = fetch_impulse_response(
@@ -230,21 +247,49 @@ def download_measurements_to_wavs(
                 f"Sample rate mismatch: '{item.get('title')}' is {fs} Hz but others are "
                 f"{sample_rate} Hz. All measurements in the grid must share one sample rate."
             )
-        fetched.append((item, samples, start_time))
+        fetched.append((item, samples, start_time, _maybe_float(item.get("peak_time"))))
 
-    offsets = _placement_offsets([entry[2] for entry in fetched], int(sample_rate), pad_ms=pad_ms)
+    fs = int(sample_rate)
+    pre_roll = max(0, int(round(pre_roll_ms / 1000.0 * fs)))
+
+    # Locate each IR's direct peak (REW's robust value where given, else argmax)
+    # and its absolute time on the timing-reference axis.
+    peak_indices: list[int] = []
+    abs_peaks: list[float] = []
+    for _item, samples, start_time, peak_time in fetched:
+        if peak_time is not None:
+            index = int(round((float(peak_time) - float(start_time)) * fs))
+            index = min(max(index, 0), max(samples.size - 1, 0))
+            abs_peaks.append(float(peak_time))
+        else:
+            index = int(np.argmax(np.abs(samples)))
+            abs_peaks.append(float(start_time) + index / float(fs))
+        peak_indices.append(index)
+
+    plan = _placement_plan(abs_peaks, peak_indices, fs, pre_roll)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[dict[str, Any]] = []
-    for (item, samples, _start), offset in zip(fetched, offsets):
-        placed = np.concatenate(
-            [np.zeros(offset, dtype=np.float32), samples.astype(np.float32)]
-        )
+    for (item, samples, _start, peak_time), peak_index, lead in zip(
+        fetched, peak_indices, plan
+    ):
+        if lead >= 0:
+            placed = np.concatenate(
+                [np.zeros(lead, dtype=np.float32), samples.astype(np.float32)]
+            )
+        else:
+            placed = np.ascontiguousarray(samples[-lead:], dtype=np.float32)
         path = out_dir / f"spk{int(item['speaker']):02d}_mic{int(item['mic']):02d}.wav"
-        wavfile.write(str(path), int(sample_rate), placed)
-        written.append(
-            {"mic": int(item["mic"]), "speaker": int(item["speaker"]), "path": str(path)}
-        )
+        wavfile.write(str(path), fs, placed)
+        entry: dict[str, Any] = {
+            "mic": int(item["mic"]),
+            "speaker": int(item["speaker"]),
+            "path": str(path),
+        }
+        if peak_time is not None:
+            # The peak now sits at (lead + peak_index) in the written WAV.
+            entry["arrival_ms"] = max(0.0, (lead + peak_index) / float(fs) * 1000.0)
+        written.append(entry)
     return written
 
 

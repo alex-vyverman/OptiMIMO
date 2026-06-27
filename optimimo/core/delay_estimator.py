@@ -27,7 +27,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from ..util import next_power_of_two
-from .io import load_measurement_matrix
+from .io import compute_measurement_arrivals, load_measurement_matrix
 from .smoothing import fractional_octave_complex_smooth
 
 
@@ -69,6 +69,7 @@ def suggest_target_delay_ms(
     """
     sample_rate, ir_matrix = load_measurement_matrix(config, base_dir)
     num_mics, num_speakers, ir_length = ir_matrix.shape
+    arrivals = compute_measurement_arrivals(config, sample_rate)
 
     # Match the solver's FFT resolution so the smoothing produces the
     # same spectrum the solver will see. Use the configured fft_size
@@ -93,7 +94,7 @@ def suggest_target_delay_ms(
     smoothing_applied = False
     if smoothing_fraction > 0.0:
         h_freq = fractional_octave_complex_smooth(
-            h_freq, freqs, ir_matrix, sample_rate, smoothing_fraction
+            h_freq, freqs, ir_matrix, sample_rate, smoothing_fraction, arrivals=arrivals
         )
         smoothing_applied = True
 
@@ -127,8 +128,13 @@ def suggest_target_delay_ms(
             if band_gd_ms.size == 0:
                 continue
             gd_robust = float(np.quantile(band_gd_ms, quantile))
-            ir = ir_matrix[m, s, :]
-            arrival_ms = float(int(np.argmax(np.abs(ir))) / sample_rate * 1000.0)
+            # Prefer the robust supplied arrival (e.g. REW's reported IR peak);
+            # fall back to argmax, which is unreliable for subwoofers.
+            if np.isfinite(arrivals[m, s]):
+                arrival_ms = float(arrivals[m, s] * 1000.0)
+            else:
+                ir = ir_matrix[m, s, :]
+                arrival_ms = float(int(np.argmax(np.abs(ir))) / sample_rate * 1000.0)
             per_measurement.append(
                 {
                     "speaker": s,

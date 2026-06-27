@@ -411,7 +411,14 @@ class AppState:
                 except (KeyError, TypeError, ValueError):
                     continue
                 if 0 <= speaker < speakers and 0 <= mic < mics:
-                    kept.append({"speaker": speaker, "mic": mic, "path": str(entry.get("path", ""))})
+                    new_entry = {"speaker": speaker, "mic": mic, "path": str(entry.get("path", ""))}
+                    arrival_ms = entry.get("arrival_ms")
+                    if arrival_ms is not None:
+                        try:
+                            new_entry["arrival_ms"] = float(arrival_ms)
+                        except (TypeError, ValueError):
+                            pass
+                    kept.append(new_entry)
             config["measurements"] = kept
 
     # ------------------------------------------------------------------
@@ -431,14 +438,19 @@ class AppState:
             grid[(int(entry["mic"]), int(entry["speaker"]))] = str(entry.get("path", ""))
         return grid
 
-    def set_measurement(self, mic: int, speaker: int, path: str) -> None:
+    def set_measurement(
+        self, mic: int, speaker: int, path: str, arrival_ms: float | None = None
+    ) -> None:
         entries = [
             entry
             for entry in self.config.get("measurements", []) or []
             if not (int(entry["mic"]) == mic and int(entry["speaker"]) == speaker)
         ]
         if path:
-            entries.append({"speaker": speaker, "mic": mic, "path": path})
+            entry: dict[str, Any] = {"speaker": speaker, "mic": mic, "path": path}
+            if arrival_ms is not None:
+                entry["arrival_ms"] = float(arrival_ms)
+            entries.append(entry)
         entries.sort(key=lambda e: (int(e["mic"]), int(e["speaker"])))
         self.config["measurements"] = entries
 

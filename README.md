@@ -66,7 +66,9 @@ Instead of manually exporting one WAV per crosspoint, you can pull measurements 
 3. **Assign.** Pick the REW measurement for each speaker/mic pair (same layout as the folder-assign helper). Leave a cell empty to skip it.
 4. **Import.** The selected impulse responses are downloaded (un-normalised, so relative levels between speakers and mic positions are preserved), written as 32-bit-float mono WAVs under `rew_import/` next to your config, and assigned into the grid. Validate as usual before solving.
 
-The import bakes each IR's REW-reported start time into a fixed pre-roll so every file shares one absolute time reference, preserving the relative time-of-flight between measurements. This is only physically correct if the measurements were captured with an **acoustic (or loopback) timing reference** in REW — the API cannot recover relative timing that was never measured (see [REW Measurement and Export Workflow](#rew-measurement-and-export-workflow)).
+Each imported measurement also records REW's reported IR peak time as an `arrival_ms` field on its `measurements` entry. The solver uses this as the per-IR direct-arrival time when de-rotating for `h_smoothing` and the anchored target (and the delay diagnostic displays it), falling back to the impulse-response `argmax` for measurements without it. This matters for subwoofers: a sub's IR has no sharp peak, so `argmax` is unreliable, whereas REW's value is robust.
+
+REW returns each IR with about a second of pre-peak lead-in, so the import anchors on each IR's direct-peak time (REW's robust `timeOfIRPeakSeconds` where available) and places that peak at a small pre-roll plus the IR's arrival relative to the earliest measurement — trimming the lead-in while preserving the relative time-of-flight between measurements. This is only physically correct if the measurements were captured with an **acoustic (or loopback) timing reference** in REW — the API cannot recover relative timing that was never measured (see [REW Measurement and Export Workflow](#rew-measurement-and-export-workflow)).
 
 ### Run tab
 
@@ -196,7 +198,7 @@ An up-to-date example lives in `example_config.json` (regenerate any time from t
 | `num_mic_positions` | required | Number of microphone positions (M) in the measurement grid. |
 | `num_inputs` | `num_speakers` | Number of input channels (K), e.g. `2` for stereo sources. Produces N x K FIR filters. |
 | `sample_rate` | from WAVs | Expected sample rate. Optional for WAV input (read from files, mismatches rejected); required for text IRs without a time column. |
-| `measurements` | — | Explicit list of `{speaker, mic, path}` entries, one IR per speaker/mic pair. |
+| `measurements` | — | Explicit list of `{speaker, mic, path}` entries, one IR per speaker/mic pair. Entries may carry an optional `arrival_ms` (the IR's direct-arrival time in the WAV's timeline, populated by the REW import) used for the smoothing de-rotation in place of `argmax`. |
 | `measurement_pattern` | — | Alternative to `measurements`: filename template such as `"measurements/spk_{speaker:02d}_mic_{mic:02d}.wav"`. Supports `{speaker}`, `{mic}`, `{speaker1}`, `{mic1}`, `{speaker_name}` and `{mic_name}` (see [Measurement Naming](#measurement-naming)). |
 | `wav_channel` | `0` | Channel to read from multichannel measurement WAVs. |
 | `ir_crop_start_sample` / `ir_crop_start_ms` | `0` | Discard this much of the start of every IR before processing (both add together). Use only if all exports share a common dead-time; never crop per-measurement, that destroys relative timing. |

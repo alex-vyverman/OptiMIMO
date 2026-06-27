@@ -10,7 +10,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from ..util import EPS, db_to_amplitude
-from .smoothing import _build_log_smoothing_grid, _smooth_complex_spectrum
+from .smoothing import _arrival_seconds, _build_log_smoothing_grid, _smooth_complex_spectrum
 
 
 def target_curve_amplitude(freqs: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
@@ -160,6 +160,8 @@ def build_anchored_target_matrix(
     profile_weights: np.ndarray,
     mic_weights: np.ndarray,
     config: Mapping[str, Any],
+    *,
+    arrivals: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
     """Build an anchored target derived from each input's primary speaker.
 
@@ -213,8 +215,7 @@ def build_anchored_target_matrix(
         for mic in range(num_mics):
             key = (mic, primary)
             if key not in smoothed_cache:
-                impulse = room_irs[mic, primary]
-                arrival_s = int(np.argmax(np.abs(impulse))) / float(sample_rate)
+                arrival_s = _arrival_seconds(arrivals, room_irs, mic, primary, sample_rate)
                 smoothed_cache[key] = _smooth_complex_spectrum(
                     h_freq[:, mic, primary], freqs, log_f, kernel, radius, f_low, arrival_s
                 )

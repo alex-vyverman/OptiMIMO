@@ -71,6 +71,22 @@ def _smooth_complex_spectrum(
     return result * np.conj(rotation)
 
 
+def _arrival_seconds(
+    arrivals: np.ndarray | None, room_irs: np.ndarray, mic: int, speaker: int, sample_rate: int
+) -> float:
+    """Direct-arrival time for one IR: a supplied robust value, else argmax.
+
+    ``arrivals`` (e.g. from REW's reported IR peak) takes precedence where it is
+    finite; otherwise the impulse peak is used, which is fine for sharp-transient
+    speakers but unreliable for subwoofers.
+    """
+    if arrivals is not None:
+        candidate = arrivals[mic, speaker]
+        if np.isfinite(candidate):
+            return float(candidate)
+    return int(np.argmax(np.abs(room_irs[mic, speaker]))) / float(sample_rate)
+
+
 def fractional_octave_complex_smooth(
     h_freq: np.ndarray,
     freqs: np.ndarray,
@@ -78,16 +94,18 @@ def fractional_octave_complex_smooth(
     sample_rate: int,
     fraction: float,
     *,
+    arrivals: np.ndarray | None = None,
     progress: Callable[[float], None] | None = None,
     cancel: threading.Event | None = None,
 ) -> np.ndarray:
     """Apply fractional-octave complex smoothing to the room transfer matrix.
 
-    Each measurement is de-rotated by its own direct-sound arrival time
-    (estimated from the impulse peak) before smoothing, then rotated back, so
-    relative phase between speakers and microphone positions is preserved.
-    This is the frequency-domain equivalent of a frequency-dependent window
-    of roughly `fraction` cycles centered on each IR's arrival.
+    Each measurement is de-rotated by its own direct-sound arrival time before
+    smoothing, then rotated back, so relative phase between speakers and
+    microphone positions is preserved. This is the frequency-domain equivalent
+    of a frequency-dependent window of roughly `fraction` cycles centered on each
+    IR's arrival. ``arrivals`` supplies a robust per-(mic, speaker) arrival
+    (seconds, NaN where unknown); the impulse peak is used as the fallback.
     """
     if fraction <= 0.0:
         return h_freq
@@ -102,8 +120,7 @@ def fractional_octave_complex_smooth(
     for mic in range(num_mics):
         for speaker in range(num_speakers):
             _check_cancel(cancel)
-            impulse = room_irs[mic, speaker]
-            arrival_s = int(np.argmax(np.abs(impulse))) / float(sample_rate)
+            arrival_s = _arrival_seconds(arrivals, room_irs, mic, speaker, sample_rate)
             smoothed[:, mic, speaker] = _smooth_complex_spectrum(
                 h_freq[:, mic, speaker], freqs, log_f, kernel, radius, f_low, arrival_s
             )

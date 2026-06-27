@@ -240,6 +240,49 @@ def load_measurement_matrix(config: Mapping[str, Any], base_dir: Path) -> tuple[
     return sample_rate, room_irs
 
 
+def _measurement_crop_start_sample(config: Mapping[str, Any], sample_rate: int) -> int:
+    """Total leading samples discarded from every IR (matches load_measurement_matrix)."""
+    start_sample = int(config.get("ir_crop_start_sample", 0))
+    if "ir_crop_start_ms" in config:
+        start_sample += int(round(float(config["ir_crop_start_ms"]) * sample_rate / 1000.0))
+    return start_sample
+
+
+def compute_measurement_arrivals(config: Mapping[str, Any], sample_rate: int) -> np.ndarray:
+    """Per-(mic, speaker) direct-arrival times in seconds, on the cropped-IR axis.
+
+    Reads the optional ``arrival_ms`` recorded on each explicit ``measurements``
+    entry (populated by the REW import from REW's robust ``timeOfIRPeakSeconds``)
+    and shifts it into the same cropped/zero-padded timeline the solver sees.
+    Entries without ``arrival_ms`` (manual files, ``measurement_pattern``,
+    synthetic data) are left as ``NaN`` so callers fall back to ``argmax``.
+    """
+    num_speakers = int(config["num_speakers"])
+    num_mics = int(config["num_mic_positions"])
+    arrivals = np.full((num_mics, num_speakers), np.nan, dtype=np.float64)
+
+    measurements = config.get("measurements")
+    if not isinstance(measurements, list):
+        return arrivals
+
+    crop_seconds = _measurement_crop_start_sample(config, sample_rate) / float(sample_rate)
+    for entry in measurements:
+        if not isinstance(entry, dict):
+            continue
+        arrival_ms = entry.get("arrival_ms")
+        if arrival_ms is None:
+            continue
+        try:
+            speaker = int(entry["speaker"])
+            mic = int(entry["mic"])
+            arrival_s = float(arrival_ms) / 1000.0 - crop_seconds
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= speaker < num_speakers and 0 <= mic < num_mics:
+            arrivals[mic, speaker] = max(0.0, arrival_s)
+    return arrivals
+
+
 def load_target_curve_text(path: Path, base_dir: Path) -> list[list[float]]:
     """Load a target house curve from a text file with freq_hz and dB columns.
 

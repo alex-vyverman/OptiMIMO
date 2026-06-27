@@ -265,6 +265,7 @@ class MeasurementsTab:
                             "meas_id": uuid,
                             "title": meas.get("title", uuid),
                             "sample_rate": meas.get("sample_rate"),
+                            "peak_time": meas.get("peak_time"),
                         }
                     )
                 if not assignments:
@@ -293,7 +294,12 @@ class MeasurementsTab:
                         relative = str(path.relative_to(STATE.base_dir))
                     except ValueError:
                         relative = str(path)
-                    STATE.set_measurement(entry["mic"], entry["speaker"], relative)
+                    STATE.set_measurement(
+                        entry["mic"],
+                        entry["speaker"],
+                        relative,
+                        arrival_ms=entry.get("arrival_ms"),
+                    )
                 dialog.close()
                 self._grid_section.refresh()
                 ui.notify(

@@ -21,7 +21,7 @@ import numpy as np
 from ..export.camilladsp import generate_camilladsp_yaml
 from ..export.firs import export_firs
 from ..util import next_power_of_two
-from .io import resolve_path, resolve_target_curve
+from .io import compute_measurement_arrivals, resolve_path, resolve_target_curve
 from .smoothing import SolveCancelled, fractional_octave_complex_smooth, smooth_solution_matrix
 from .solver import (
     SpeakerProfile,
@@ -124,6 +124,11 @@ def solve(
     if np.any(mic_weights < 0.0) or not np.any(mic_weights > 0.0):
         raise ValueError("mic_weights must be non-negative with at least one positive weight.")
 
+    # Robust per-(mic, speaker) arrival times (e.g. from REW's reported IR
+    # peak), used to de-rotate each IR for H smoothing and the anchored target.
+    # NaN where unknown; the smoothing/target code falls back to argmax.
+    arrivals = compute_measurement_arrivals(config, sample_rate)
+
     _report(progress, "fft", 0.0)
     _check_cancel(cancel)
     h_freq = np.fft.rfft(room_irs, n=fft_size, axis=2)
@@ -140,6 +145,7 @@ def solve(
             room_irs,
             sample_rate,
             smoothing_fraction,
+            arrivals=arrivals,
             progress=(lambda f: _report(progress, "smooth_h", 0.1 + 0.195 * f)),
             cancel=cancel,
         )
@@ -151,7 +157,8 @@ def solve(
     target_mode = str(config.get("target_mode", "flat")).lower()
     if target_mode == "anchored":
         y_freq, _target_level = build_anchored_target_matrix(
-            freqs, h_freq, room_irs, sample_rate, profile_weights, mic_weights, config
+            freqs, h_freq, room_irs, sample_rate, profile_weights, mic_weights, config,
+            arrivals=arrivals,
         )
     elif target_mode == "flat":
         y_freq, _target_level = build_target_matrix(freqs, h_freq, profile_weights, mic_weights, config)
