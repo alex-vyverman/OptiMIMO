@@ -133,14 +133,12 @@ Either way, the measurement itself has to capture the timing, and the level/SNR 
 
 ### 3. Frequency-dependent smoothing (solver or REW, not both)
 
-Without some form of frequency-dependent smoothing, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position. You have two equivalent ways to apply it:
+Without some form of frequency-dependent smoothing, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position. Apply it **once**, in one of two places — but the two are not equally convenient:
 
-- *In the solver (recommended):* set `h_smoothing_fraction` to `6.0`-`10.0` (≈ 1/6-1/10 octave). This is reproducible from the config, de-rotates each IR by its direct-sound arrival so relative phase is preserved, and lets you change the amount without re-exporting.
-- *In REW:* apply a **frequency-dependent window (FDW)** of roughly **6-10 cycles** (IR Windows -> "Add frequency dependent window") before export. Equivalent effect; baked into the WAV.
+- *In the solver (recommended):* set `h_smoothing_fraction` to `6.0`-`10.0` (≈ 1/6-1/10 octave) — the in-script equivalent of an FDW. It de-rotates each IR by its direct-sound arrival so relative phase is preserved, it's reproducible from the config, and crucially it needs **no windowing in REW**: you export (or import) the full, unwindowed IR and avoid the step-4 timing trap entirely.
+- *In REW (only if you have a reason to bake it in):* apply a **frequency-dependent window (FDW)** of roughly **6-10 cycles** (IR Windows -> "Add frequency dependent window") before export. Same effect baked into the WAV — but an FDW *is* a window applied on export, which is exactly the operation that can peak-align your measurements (step 4). If you go this way you **must** export with a common `t=0` sample index for every file, then check the **Impulse responses** plot to confirm the peaks are still spread by speaker. (The API import never windows, so this caveat is for manual WAV export only.)
 
-Pick one. If you apply both, the smoothing compounds and you lose modal detail you wanted to keep.
-
-Because the solver's `h_smoothing_fraction` reproduces the FDW, the cleanest path is to do the smoothing in the solver and export (or import) the **full, unwindowed** impulse response. That also sidesteps the timing trap in step 4 — a left/right time-domain window applied on export is the usual way relative timing gets destroyed. (REW's fractional-octave *magnitude* smoothing only affects the displayed trace, never the exported IR, so it is irrelevant here.)
+Do **not** do both, or the smoothing compounds and you lose modal detail you wanted to keep. (REW's fractional-octave *magnitude* smoothing is a separate thing — it only changes the displayed trace, never the exported IR, so it doesn't count here.)
 
 ### 4. Exporting WAVs without losing the timing
 
