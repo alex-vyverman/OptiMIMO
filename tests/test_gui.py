@@ -60,6 +60,46 @@ async def test_validate_example_config(user: User) -> None:
     await user.should_see("Config is valid.")
 
 
+async def test_measurement_ir_plot_renders(user: User, tmp_path: Path) -> None:
+    """The Measurements tab IR visualizer loads the grid and renders a plot."""
+    fs = 48000
+    room = synthetic_room_irs(fs, 2, 2, length=2048)
+    measurements = []
+    for mic in range(2):
+        for speaker in range(2):
+            path = tmp_path / f"ir_m{mic}_s{speaker}.wav"
+            wavfile.write(path, fs, room[mic, speaker].astype(np.float32))
+            measurements.append({"speaker": speaker, "mic": mic, "path": str(path)})
+
+    STATE.config = {
+        "num_speakers": 2,
+        "num_mic_positions": 2,
+        "num_inputs": 2,
+        "sample_rate": fs,
+        "speaker_profiles": {
+            "0": {"name": "L", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
+            "1": {"name": "R", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
+        },
+        "measurements": measurements,
+    }
+    STATE.normalize_config()
+
+    await user.open("/")
+    user.find("Show / refresh").click()
+    # Loading runs in a thread (run.io_bound); poll until the post-load caption
+    # appears (it only renders once the IRs have loaded and the plot is built).
+    shown = False
+    for _ in range(50):
+        await asyncio.sleep(0.1)
+        try:
+            await user.should_see("Toggle a speaker via the legend")
+            shown = True
+            break
+        except AssertionError:
+            continue
+    assert shown, "IR plot did not render after loading measurements"
+
+
 async def test_changing_speaker_count_updates_profiles(user: User) -> None:
     """Regression: bumping the speaker count must rebuild the dependent
     sections immediately, without needing the Force Refresh button."""

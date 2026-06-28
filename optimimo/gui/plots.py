@@ -107,6 +107,73 @@ def impulse_envelope(
     return time_s, envelope
 
 
+def decimate_peak_preserving(
+    signal: np.ndarray, points: int = 1500
+) -> tuple[np.ndarray, np.ndarray]:
+    """Decimate ``signal`` to about ``points`` samples for plotting.
+
+    Each block keeps its largest-magnitude sample (preserving peak position and
+    sign), so a sharp direct arrival survives decimation. Returns
+    ``(positions, values)`` where ``positions`` are original sample indices.
+    """
+    n = int(signal.size)
+    if points <= 0 or n <= points:
+        return np.arange(n), np.asarray(signal, dtype=np.float64)
+    step = int(np.ceil(n / points))
+    usable = n - (n % step)
+    blocks = signal[:usable].reshape(-1, step)
+    local = np.argmax(np.abs(blocks), axis=1)
+    rows = np.arange(blocks.shape[0])
+    positions = rows * step + local
+    values = blocks[rows, local]
+    if usable < n:  # keep the strongest tail sample too
+        tail = signal[usable:]
+        tail_pos = usable + int(np.argmax(np.abs(tail)))
+        positions = np.append(positions, tail_pos)
+        values = np.append(values, signal[tail_pos])
+    return positions, np.asarray(values, dtype=np.float64)
+
+
+def stacked_ir_traces(
+    room_irs: np.ndarray,
+    sample_rate: int,
+    *,
+    points: int = 1500,
+    spacing: float = 1.0,
+    height: float = 0.42,
+) -> list[dict[str, object]]:
+    """Decimated, peak-normalized, vertically-stacked measured-IR traces.
+
+    ``room_irs`` has shape ``(mics, speakers, samples)``. Measurements are
+    ordered by ``(speaker, mic)``; each IR is normalized so its largest
+    excursion spans ``height`` and shifted up by ``index * spacing`` so the
+    traces stack without overlapping. Each returned dict carries ``speaker``,
+    ``mic``, ``offset``, ``time_ms`` and ``amplitude`` (already offset), ready
+    to drop into a plot.
+    """
+    num_mics, num_speakers, _ = room_irs.shape
+    traces: list[dict[str, object]] = []
+    index = 0
+    for speaker in range(num_speakers):
+        for mic in range(num_mics):
+            ir = np.asarray(room_irs[mic, speaker], dtype=np.float64)
+            peak = float(np.max(np.abs(ir))) if ir.size else 0.0
+            scale = (height / peak) if peak > 0.0 else 0.0
+            positions, values = decimate_peak_preserving(ir, points)
+            offset = index * spacing
+            traces.append(
+                {
+                    "speaker": speaker,
+                    "mic": mic,
+                    "offset": offset,
+                    "time_ms": positions / float(sample_rate) * 1000.0,
+                    "amplitude": values * scale + offset,
+                }
+            )
+            index += 1
+    return traces
+
+
 def pre_delay_energy_ratio_db(fir: np.ndarray, sample_rate: int, delay_s: float) -> float:
     """Energy before 90% of the target delay relative to total, in dB."""
     split = int(0.9 * delay_s * sample_rate)

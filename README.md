@@ -57,6 +57,8 @@ A speaker x mic file grid for assigning one IR per crosspoint. A folder-assign h
 
 Both the folder-assign and REW-import dialogs preselect each (speaker, mic) cell automatically when the filename (or REW measurement title) contains the speaker profile name and the mic position name as substrings. Matching is case-insensitive and treats `_`, `-`, `.`, `/`, `\` as equivalent to spaces, so "Sub L_MLP.wav" matches a Sub L / MLP cell just like "sub-l mlp.wav" would. Already-assigned candidates are hidden from other cells' dropdowns to avoid double-assignment.
 
+An **Impulse responses** panel (Show / refresh) plots every measured IR stacked by speaker on a shared time axis, peak-normalized, with a tick marking the direct-arrival time the solver uses. It's a quick way to confirm the timing is physically aligned — mains should peak earliest and the subs later, each speaker consistent across mic positions. Toggle a speaker via the legend and set the visible **Window (ms)** to zoom the arrival region.
+
 ### Importing measurements from REW (HTTP API)
 
 Instead of manually exporting one WAV per crosspoint, you can pull measurements directly from REW. On the Measurements tab (explicit file-list mode), click **Import from REW…**:
@@ -109,13 +111,19 @@ GUI tests run with `python3 -m pytest tests/` (process-isolated via pytest-forke
 
 ## REW Measurement and Export Workflow
 
-The solver inverts the measured transfer matrix at full FFT-bin resolution (no internal spectral smoothing) and depends on phase coherence between all measurements. The realism of the output is therefore decided almost entirely by how the impulse responses are measured and exported in REW. Follow these steps:
+The solver inverts the measured transfer matrix at full FFT-bin resolution and depends on **phase coherence between all measurements**: the relative time-of-flight between speakers and across mic positions must be physically correct, because the MIMO solve sums speakers at each mic. Getting that timing right is the single most important part of the workflow. There are two ways to bring measurements in:
+
+- **Import from REW over the HTTP API (recommended).** The Measurements tab's *Import from REW…* reads each IR together with REW's reported timing and reconstructs the relative arrivals automatically — no manual windowing or export fiddling, and it avoids the export timing trap below. See [Importing measurements from REW](#importing-measurements-from-rew-http-api).
+- **Export WAVs from REW manually.** Workable, but the export step has a timing trap (step 4) that silently destroys the relative timing if you let REW peak-align the IRs.
+
+Either way, the measurement itself has to capture the timing, and the level/SNR advice below applies to both.
 
 ### 1. Timing reference (non-negotiable)
 
 - Enable an **acoustic timing reference** (or soundcard loopback) in REW: Preferences -> Analysis -> "Use acoustic timing reference".
-- Use the **same reference speaker** for all speaker/mic measurements in the session.
-- Do **not** let REW set `t=0` at each IR peak independently. The MIMO solve sums speakers at each mic position, so the relative time-of-flight between speakers and across mic positions must be physically correct. Per-measurement peak alignment destroys this and the matrix solution becomes meaningless.
+- Use the **same reference speaker** (or loopback) for all speaker/mic measurements in the session; never change it mid-session.
+- **Without a timing reference there is no shared time origin.** REW then parks every IR's peak at a fixed default position (about 1 s in) independently per measurement, so the relative time-of-flight is *gone and unrecoverable* — no import or export can put it back, and the matrix solution becomes meaningless.
+- **How to check:** in the Measurements tab's **Impulse responses** plot (or the delay diagnostic), correct timing shows the direct-arrival peaks spread out — mains earliest, subs later, each speaker consistent across its mic positions. If every IR's peak reads the *same* time, the reference was off (or the export peak-aligned them — step 4).
 
 ### 2. Measurement hygiene
 
@@ -123,17 +131,7 @@ The solver inverts the measured transfer matrix at full FFT-bin resolution (no i
 - Load the microphone calibration file before measuring (it is baked into the export).
 - Use long sweeps (256k-512k at 96 kHz) with 2+ repetitions for SNR. The solver will happily "correct" low-frequency noise as if it were real room response, especially near the `authority_floor_db` limit.
 
-### 3. Windowing in REW
-
-REW's fractional-octave smoothing only affects the displayed magnitude trace, **not** the exported impulse response. Two things matter here, and they are independent:
-
-**Left/right time-domain windows (always do this in REW):**
-
-- Left window: short (about 1 ms Tukey) ahead of the reference, to suppress pre-arrival noise without disturbing causality.
-- Right window: long enough for low-frequency resolution (for example 65536 samples at 96 kHz is 683 ms, matching `ir_length_samples`).
-- Export with the windows applied.
-
-**Frequency-dependent smoothing (do this *either* in REW *or* in the solver, not both):**
+### 3. Frequency-dependent smoothing (solver or REW, not both)
 
 Without some form of frequency-dependent smoothing, the solver inverts seat-specific high-frequency comb filtering that is wrong everywhere except at the exact mic position. You have two equivalent ways to apply it:
 
@@ -142,19 +140,31 @@ Without some form of frequency-dependent smoothing, the solver inverts seat-spec
 
 Pick one. If you apply both, the smoothing compounds and you lose modal detail you wanted to keep.
 
-### 4. Export settings
+Because the solver's `h_smoothing_fraction` reproduces the FDW, the cleanest path is to do the smoothing in the solver and export (or import) the **full, unwindowed** impulse response. That also sidesteps the timing trap in step 4 — a left/right time-domain window applied on export is the usual way relative timing gets destroyed. (REW's fractional-octave *magnitude* smoothing only affects the displayed trace, never the exported IR, so it is irrelevant here.)
 
-File -> Export -> "Export impulse response as WAV":
+### 4. Exporting WAVs without losing the timing
+
+Skip this step entirely if you use the API import — it handles the timing for you.
+
+**The trap.** REW stores each IR with about a second of pre-peak lead-in. On *File -> Export -> "Export impulse response as WAV"*, REW positions the peak at a fixed place in the file, and if you export a **peak-referenced time-domain window**, the window's left edge becomes sample 0 — so **every IR's peak lands at the same sample**. That peak-aligns all measurements and silently destroys the relative time-of-flight. The tell-tale: the **Impulse responses** plot shows every peak at the same time (e.g. all at the left-window length, or all at ~1 s).
+
+**To preserve relative timing on a manual export:**
+
+- Do **not** export a peak-referenced left-windowed IR as-is, and do **not** rely on REW's default per-peak placement.
+- Use REW's **"place t=0 at a specific sample index"** option with the **same sample index for every file**, so all exports share one time origin and each peak lands at its true offset. (Exporting the full, unwindowed IR per step 3 and letting the solver smooth is the easiest way to stay out of trouble.)
+- Use the same export length and lead-in for every file.
+
+**Format (matters for both import paths):**
 
 - **32-bit float**, mono.
 - Native measurement sample rate (no resampling); it must match `sample_rate` in the config.
 - **No normalisation.** The `auto_target_level` and acoustic-authority logic depend on consistent relative levels between speakers and mic positions.
-- Same export length for all files.
-- Windowed data (from step 3).
 
-### 5. Verify after applying filters
+### 5. Verify the timing before solving — and the result after
 
-Load the generated filters into CamillaDSP, then re-measure all mic positions in REW with the same timing reference and compare against the predicted target. Also watch the wrap-energy warning in `diagnostics.json`; if it fires, increase `fft_size` or `target_delay_ms`.
+**Before solving:** open the **Impulse responses** plot on the Measurements tab and confirm the direct-arrival peaks are *spread out* by speaker (mains earliest, subs later, each speaker consistent across its mic positions). If every peak sits at the same time, the timing is collapsed — fix the reference (step 1) or the export (step 4) and re-import; a solve on peak-aligned measurements is meaningless.
+
+**After applying filters:** load the generated filters into CamillaDSP, re-measure all mic positions in REW with the same timing reference, and compare against the predicted target. Also watch the wrap-energy warning in `diagnostics.json`; if it fires, increase `fft_size` or `target_delay_ms`.
 
 ### Recommended config restraint
 

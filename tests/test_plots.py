@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from optimimo import solve
 from optimimo.cli import synthetic_room_irs
@@ -41,6 +42,37 @@ def test_magnitude_db_floor():
     assert db[0] == plots.DISPLAY_FLOOR_DB
     assert abs(db[1]) < 1e-9
     assert abs(db[2] - 20.0) < 1e-9
+
+
+def test_decimate_peak_preserving_keeps_signed_peak():
+    sig = np.zeros(1000)
+    sig[500] = -1.0  # sharp negative peak
+    positions, values = plots.decimate_peak_preserving(sig, points=100)
+    assert values.size < sig.size
+    assert values.min() == pytest.approx(-1.0)  # peak (and sign) survives
+    assert positions[int(np.argmin(values))] == 500  # at the right time
+    # Short signal is returned untouched.
+    positions2, values2 = plots.decimate_peak_preserving(sig, points=5000)
+    assert positions2.size == sig.size
+
+
+def test_stacked_ir_traces_order_offset_and_normalization():
+    fs = 48000
+    room = np.zeros((2, 2, 1000))  # (mics, speakers, samples)
+    room[0, 0, 100] = 2.0
+    room[1, 0, 150] = 0.5
+    room[0, 1, 200] = 1.0
+    room[1, 1, 250] = 1.0
+    traces = plots.stacked_ir_traces(room, fs, spacing=1.0, height=0.4)
+
+    assert len(traces) == 4
+    # Ordered by (speaker, mic) with increasing vertical offset.
+    assert [(t["speaker"], t["mic"]) for t in traces] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+    assert [t["offset"] for t in traces] == [0.0, 1.0, 2.0, 3.0]
+    # Each IR is peak-normalized to +/- height around its own offset.
+    for trace in traces:
+        deviation = np.max(np.abs(np.asarray(trace["amplitude"]) - trace["offset"]))
+        assert deviation == pytest.approx(0.4, abs=1e-6)
 
 
 def test_achieved_and_residual_table():

@@ -8,9 +8,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
+import plotly.graph_objects as go
 from nicegui import run, ui
 
-from ..core.io import load_impulse_response, measurement_path_grid
+from ..core.io import (
+    compute_measurement_arrivals,
+    load_impulse_response,
+    load_measurement_matrix,
+    measurement_path_grid,
+)
 from ..core.rew import (
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -18,21 +25,55 @@ from ..core.rew import (
     download_measurements_to_wavs,
     fetch_measurements,
 )
+from . import plots
 from .file_picker import pick_directory, pick_file
 from .state import STATE
 
+_IR_PALETTE = [
+    "#00E5FF", "#34d399", "#fbbf24", "#f87171", "#38bdf8",
+    "#a78bfa", "#fb923c", "#2dd4bf", "#e879f9", "#94a3b8",
+    "#6ee7b7", "#fca5a5", "#7dd3fc", "#c4b5fd", "#fdba74",
+]
+_IR_LAYOUT = dict(
+    paper_bgcolor="#1a1d2e",
+    plot_bgcolor="#1a1d2e",
+    font=dict(color="#c7c9d9", family="Inter, sans-serif", size=11),
+    margin=dict(l=120, r=20, t=30, b=40),
+    legend=dict(
+        orientation="h", yanchor="bottom", y=1.02,
+        font=dict(color="#8b8fa3", size=10), bgcolor="rgba(0,0,0,0)",
+    ),
+)
+_IR_AXIS = dict(
+    gridcolor="rgba(255,255,255,0.06)",
+    zerolinecolor="rgba(255,255,255,0.08)",
+    color="#8b8fa3",
+    tickfont=dict(color="#6b7094", size=10),
+)
+
 
 class MeasurementsTab:
+    def __init__(self) -> None:
+        # Cached IR-plot payload {sample_rate, traces, arrivals, ...}; None until
+        # the user loads it. Window is the visible time span in ms.
+        self._ir_data: Optional[dict[str, Any]] = None
+        self._ir_window_ms: float = 150.0
+        self._ir_container: Any = None
+        self._ir_plot: Any = None
+
     def build(self) -> None:
         with ui.column().classes("w-full max-w-6xl gap-3"):
             self._mode_bar()
             self._validation_section()
             self._grid_section()
+            self._ir_plot_section()
 
     def refresh(self) -> None:
         self._mode_bar.refresh()
         self._grid_section.refresh()
         self._validation_section.refresh()
+        self._ir_data = None  # config changed -> cached IRs are stale
+        self._ir_plot_section.refresh()
 
     @ui.refreshable_method
     def _mode_bar(self) -> None:
@@ -440,6 +481,173 @@ class MeasurementsTab:
         ui.notify("Validating…", type="info")
         rows, summary = await run.io_bound(_validate_files, config, base_dir)
         self._validation_results.refresh(rows, summary)
+
+    # ------------------------------------------------------------------
+    # Impulse-response visualizer
+
+    @ui.refreshable_method
+    def _ir_plot_section(self) -> None:
+        with ui.card().classes("w-full"):
+            with ui.row().classes("items-center justify-between mb-3"):
+                with ui.row().classes("items-center gap-3"):
+                    ui.icon("show_chart").classes("text-xl").style(
+                        "color: #00E5FF; filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4));"
+                    )
+                    ui.label("Impulse responses").classes("text-lg font-medium")
+                ui.button(
+                    "Show / refresh", icon="refresh", on_click=self._render_ir_plot
+                )
+            self._ir_container = ui.column().classes("w-full")
+        self._populate_ir()
+
+    def _populate_ir(self) -> None:
+        self._ir_container.clear()
+        with self._ir_container:
+            if self._ir_data is None:
+                ui.label(
+                    "Load the measurements to see their impulse responses stacked "
+                    "by speaker. The vertical tick on each trace marks the direct "
+                    "arrival the solver uses — handy for confirming the timing is "
+                    "aligned."
+                ).classes("text-xs text-gray-500")
+                return
+            with ui.row().classes("items-center gap-3 mb-2"):
+                ui.number(
+                    "Window (ms)", value=round(self._ir_window_ms, 1), min=2,
+                    format="%.0f", on_change=self._on_ir_window,
+                ).classes("w-32")
+                ui.label(
+                    "Each IR is peak-normalized; ticks mark the solver's direct "
+                    "arrival. Toggle a speaker via the legend."
+                ).classes("text-xs text-gray-500")
+            self._ir_plot = ui.plotly(self._ir_figure()).classes("w-full")
+
+    def _ir_figure(self) -> go.Figure:
+        data = self._ir_data
+        profiles = STATE.config["speaker_profiles"]
+        speaker_names = [profiles[str(s)]["name"] for s in range(STATE.num_speakers())]
+        mic_labels = [STATE.mic_name(m) for m in range(STATE.num_mics())]
+        return _build_ir_figure(
+            data["traces"], data["arrivals"], speaker_names, mic_labels,
+            self._ir_window_ms,
+        )
+
+    def _on_ir_window(self, event) -> None:
+        try:
+            self._ir_window_ms = max(2.0, float(event.value))
+        except (TypeError, ValueError):
+            return
+        if self._ir_data is not None and self._ir_plot is not None:
+            self._ir_plot.update_figure(self._ir_figure())
+
+    async def _render_ir_plot(self) -> None:
+        config = _clean_load_config(STATE.config)
+        base_dir = STATE.base_dir
+        ui.notify("Loading impulse responses…", type="info")
+        try:
+            data = await run.io_bound(_load_ir_plot_data, config, base_dir)
+        except (ValueError, FileNotFoundError, OSError, KeyError) as exc:
+            ui.notify(
+                f"Could not load measurements (assign and validate them first): {exc}",
+                type="negative",
+            )
+            return
+        self._ir_data = data
+        self._ir_window_ms = float(data["default_window_ms"])
+        self._populate_ir()
+
+
+def _clean_load_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Copy ``config`` and drop the Config tab's ``0 = auto`` size sentinels.
+
+    The Config tab stores ``ir_length_samples`` / ``fft_size`` as ``0`` to mean
+    "auto", but ``load_measurement_matrix`` treats a literal ``0`` as an invalid
+    length. The Run tab strips these via ``apply_pending_fields`` before solving;
+    do the same here so the IR plot can load before a solve has been run.
+    """
+    cleaned = dict(config)
+    for key in ("ir_length_samples", "fft_size"):
+        try:
+            if int(cleaned.get(key, 0) or 0) <= 0:
+                cleaned.pop(key, None)
+        except (TypeError, ValueError):
+            cleaned.pop(key, None)
+    return cleaned
+
+
+def _load_ir_plot_data(config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+    """Load the measurement matrix and prepare stacked-IR plot data (IO-bound)."""
+    sample_rate, room_irs = load_measurement_matrix(config, base_dir)
+    arrivals = compute_measurement_arrivals(config, sample_rate)
+    traces = plots.stacked_ir_traces(room_irs, sample_rate)
+
+    full_ms = room_irs.shape[2] / float(sample_rate) * 1000.0
+    finite = arrivals[np.isfinite(arrivals)]
+    if finite.size:
+        reference_ms = float(np.max(finite)) * 1000.0
+    else:
+        peaks = [
+            int(np.argmax(np.abs(room_irs[m, s]))) / float(sample_rate) * 1000.0
+            for s in range(room_irs.shape[1])
+            for m in range(room_irs.shape[0])
+            if np.any(room_irs[m, s])
+        ]
+        reference_ms = float(np.percentile(peaks, 90)) if peaks else full_ms * 0.2
+    default_window = min(max(reference_ms * 1.6 + 30.0, 60.0), full_ms)
+    return {
+        "sample_rate": sample_rate,
+        "traces": traces,
+        "arrivals": arrivals,
+        "default_window_ms": default_window,
+        "full_ms": full_ms,
+    }
+
+
+def _build_ir_figure(
+    traces: list[dict[str, Any]],
+    arrivals: np.ndarray,
+    speaker_names: list[str],
+    mic_labels: list[str],
+    window_ms: float,
+) -> go.Figure:
+    figure = go.Figure()
+    seen_speakers: set[int] = set()
+    tickvals: list[float] = []
+    ticktext: list[str] = []
+    for trace in traces:
+        speaker = int(trace["speaker"])
+        mic = int(trace["mic"])
+        color = _IR_PALETTE[speaker % len(_IR_PALETTE)]
+        label = f"{speaker}: {speaker_names[speaker]} / {mic_labels[mic]}"
+        figure.add_trace(
+            go.Scattergl(
+                x=trace["time_ms"], y=trace["amplitude"], mode="lines",
+                line=dict(color=color, width=1),
+                name=speaker_names[speaker], legendgroup=f"spk{speaker}",
+                showlegend=speaker not in seen_speakers,
+                hovertemplate=f"{label}<br>%{{x:.2f}} ms<extra></extra>",
+            )
+        )
+        seen_speakers.add(speaker)
+        tickvals.append(float(trace["offset"]))
+        ticktext.append(f"{speaker}:{mic_labels[mic]}")
+        if arrivals is not None and np.isfinite(arrivals[mic, speaker]):
+            figure.add_trace(
+                go.Scattergl(
+                    x=[float(arrivals[mic, speaker]) * 1000.0],
+                    y=[float(trace["offset"])],
+                    mode="markers",
+                    marker=dict(color=color, size=11, symbol="line-ns-open",
+                                line=dict(width=1.5)),
+                    legendgroup=f"spk{speaker}", showlegend=False,
+                    hovertemplate=f"{label} arrival<br>%{{x:.2f}} ms<extra></extra>",
+                )
+            )
+    height = int(max(360, min(34 * len(traces) + 90, 1500)))
+    figure.update_layout(height=height, **_IR_LAYOUT)
+    figure.update_xaxes(title_text="Time (ms)", range=[0, window_ms], **_IR_AXIS)
+    figure.update_yaxes(tickvals=tickvals, ticktext=ticktext, **_IR_AXIS)
+    return figure
 
 
 def _normalize_for_match(text: str) -> str:
