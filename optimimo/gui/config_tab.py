@@ -192,13 +192,11 @@ def _num(label: str, key: str, default: float, *, fmt: str = "%.6g", tooltip: st
     """
     if key not in STATE.config:
         STATE.config[key] = default
-    
+
     def on_change(e):
-        old_value = STATE.config.get(key)
         STATE.config[key] = e.value
         STATE.mark_config_changed()
-        print(f"[CONFIG] {key}: {old_value} -> {e.value}")
-    
+
     field = ui.number(label, value=STATE.config[key], format=fmt, on_change=on_change, **kwargs)
     field.classes("w-32")
     if tooltip:
@@ -210,52 +208,11 @@ def _toggle(label: str, key: str, default: bool, *, tooltip: str | None = None) 
     """Toggle switch that binds directly to STATE.config[key]."""
     if key not in STATE.config:
         STATE.config[key] = default
-    
+
     def on_change(e):
-        old_value = STATE.config.get(key)
         STATE.config[key] = e.value
         STATE.mark_config_changed()
-        print(f"[CONFIG] {key}: {old_value} -> {e.value}")
-    
-    field = ui.switch(label, value=STATE.config[key], on_change=on_change)
-    if tooltip:
-        _info(tooltip)
-    return field
 
-
-def _toggle(label: str, key: str, default: bool, *, tooltip: str | None = None) -> ui.switch:
-    """Toggle switch that binds directly to STATE.config[key]."""
-    if key not in STATE.config:
-        STATE.config[key] = default
-    
-    def on_change(e):
-        old_value = STATE.config.get(key)
-        STATE.config[key] = e.value
-        STATE.mark_config_changed()
-        print(f"[CONFIG] {key}: {old_value} -> {e.value}")
-    
-    field = ui.switch(label, value=STATE.config[key], on_change=on_change)
-    if tooltip:
-        _info(tooltip)
-    return field
-
-
-def _toggle(label: str, key: str, default: bool, *, tooltip: str | None = None) -> ui.switch:
-    if key not in STATE.config:
-        STATE.config[key] = default
-    
-    def on_change(e):
-        try:
-            old_value = STATE.config.get(key)
-            STATE.config[key] = e.value
-            STATE.mark_config_changed()
-            # Debug logging - can be removed once issue is resolved
-            print(f"[CONFIG] {key}: {old_value} -> {e.value}")
-        except RuntimeError as err:
-            # Element is orphaned - log and notify user
-            print(f"[CONFIG ERROR] Failed to update {key}: {err}")
-            ui.notify(f"UI element disconnected. Click 'Force Refresh' to restore.", type="warning", timeout=5000)
-    
     field = ui.switch(label, value=STATE.config[key], on_change=on_change)
     if tooltip:
         _info(tooltip)
@@ -455,6 +412,17 @@ class ConfigTab:
                 "Safe operating band per speaker; the solver removes a speaker from the "
                 "optimization outside its band."
             ).classes("text-xs text-gray-500 mb-2")
+
+            def set_profile(index: int, field: str, value) -> None:
+                """Write into the *current* profile entry at event time.
+
+                Resolving STATE.config here (instead of capturing the entry
+                dict at build time) keeps the handler valid even after
+                normalize_config() replaces the nested containers.
+                """
+                STATE.config["speaker_profiles"][str(index)][field] = value
+                STATE.mark_config_changed()
+
             profiles = STATE.config["speaker_profiles"]
             for index in range(STATE.num_speakers()):
                 entry = profiles[str(index)]
@@ -464,23 +432,23 @@ class ConfigTab:
                         ui.label(f"Speaker {index}").classes("font-medium")
                     with ui.row().classes("items-end gap-3 flex-wrap"):
                         ui.input("Name", value=entry.get("name", f"Speaker {index}"),
-                                on_change=lambda e, entry=entry: entry.__setitem__("name", e.value)).classes("w-36")
+                                on_change=lambda e, i=index: set_profile(i, "name", e.value)).classes("w-36")
                         _info("Display name for this speaker.")
                         
                         ui.number("Min Hz", value=entry.get("min_hz", 20.0), min=0, format="%.6g",
-                                 on_change=lambda e, entry=entry: entry.__setitem__("min_hz", e.value)).classes("w-28")
+                                 on_change=lambda e, i=index: set_profile(i, "min_hz", e.value)).classes("w-28")
                         _info("Lower bound of the speaker's safe operating band. The solver removes this speaker from the optimization below this frequency.")
                         
                         ui.number("Max Hz", value=entry.get("max_hz", 20000.0), min=0, format="%.6g",
-                                 on_change=lambda e, entry=entry: entry.__setitem__("max_hz", e.value)).classes("w-28")
+                                 on_change=lambda e, i=index: set_profile(i, "max_hz", e.value)).classes("w-28")
                         _info("Upper bound of the speaker's safe operating band. The solver removes this speaker from the optimization above this frequency.")
                         
                         ui.number("Transition Hz", value=entry.get("transition_hz", 10.0), min=0, format="%.6g",
-                                 on_change=lambda e, entry=entry: entry.__setitem__("transition_hz", e.value)).classes("w-32")
+                                 on_change=lambda e, i=index: set_profile(i, "transition_hz", e.value)).classes("w-32")
                         _info("Raised-sine ramp width inside the band edges. Creates a smooth rolloff transition instead of a hard cutoff.")
                         
                         ui.number("Effort penalty dB", value=entry.get("effort_penalty_db", 0.0), min=0, format="%.6g",
-                                 on_change=lambda e, entry=entry: entry.__setitem__("effort_penalty_db", e.value)).classes("w-32")
+                                 on_change=lambda e, i=index: set_profile(i, "effort_penalty_db", e.value)).classes("w-32")
                         _info("Extra regularization to make the solver prefer other speakers over this one. Higher values reduce this speaker's contribution.")
 
             ui.separator()
@@ -493,13 +461,22 @@ class ConfigTab:
                 for mic in range(STATE.num_mics()):
 
                     def on_weight(event, mic=mic) -> None:
+                        # Resolve the list at event time; normalize_config()
+                        # replaces STATE.config["mic_weights"] wholesale.
                         try:
-                            weights[mic] = float(event.value)
+                            value = float(event.value)
                         except (TypeError, ValueError):
-                            pass
+                            return
+                        current = STATE.config["mic_weights"]
+                        if mic < len(current):
+                            current[mic] = value
+                            STATE.mark_config_changed()
 
                     def on_name(event, mic=mic) -> None:
-                        names[mic] = str(event.value or "")
+                        current = STATE.config["mic_names"]
+                        if mic < len(current):
+                            current[mic] = str(event.value or "")
+                            STATE.mark_config_changed()
 
                     with ui.column().classes("gap-1"):
                         ui.input(
@@ -549,12 +526,18 @@ class ConfigTab:
                     for speaker in range(STATE.num_speakers()):
 
                         def on_check(event, input_channel=input_channel, speaker=speaker) -> None:
-                            entry = set(routing[str(input_channel)])
+                            # Resolve the routing dict at event time so the
+                            # handler survives normalize_config() replacing it.
+                            current = STATE.config.get("input_speakers")
+                            if current is None:
+                                return
+                            entry = set(current.get(str(input_channel), []))
                             if event.value:
                                 entry.add(speaker)
                             else:
                                 entry.discard(speaker)
-                            routing[str(input_channel)] = sorted(entry)
+                            current[str(input_channel)] = sorted(entry)
+                            STATE.mark_config_changed()
 
                         ui.checkbox(value=speaker in allowed, on_change=on_check)
 
@@ -611,13 +594,20 @@ class ConfigTab:
                 options = {
                     s: f"{s}: {profiles[str(s)]['name']}" for s in range(STATE.num_speakers())
                 }
+                def set_primary(input_channel: int, value) -> None:
+                    # Event-time lookup: normalize_config() replaces the dict.
+                    current = STATE.config.get("input_primary_speaker")
+                    if current is not None:
+                        current[str(input_channel)] = value
+                        STATE.mark_config_changed()
+
                 with ui.row().classes("items-end gap-4 flex-wrap"):
                     for input_channel in range(STATE.num_inputs()):
                         ui.select(
                             options,
                             value=primary.get(str(input_channel), 0),
                             label=f"Primary for input {input_channel}",
-                            on_change=lambda e, ic=input_channel: primary.__setitem__(str(ic), e.value),
+                            on_change=lambda e, ic=input_channel: set_primary(ic, e.value),
                         ).classes("w-48")
                         _info("The speaker each input belongs to. The target keeps this speaker's natural arrival time and broad phase.")
                 with ui.row().classes("items-end gap-4 flex-wrap"):
@@ -716,23 +706,33 @@ class ConfigTab:
                 ui.label("House curve points (Hz, dB)").classes("font-medium")
                 _info("Target house curve as [freq_hz, dB] breakpoints, interpolated on a log-frequency axis.")
                 points = STATE.config["target_curve_points_db"]
+
+                def set_point(index: int, coord: int, value) -> None:
+                    # Event-time lookup: normalize_config() rebuilds both the
+                    # outer list and the inner [freq, db] pairs.
+                    try:
+                        number = float(value)
+                    except (TypeError, ValueError):
+                        return
+                    current = STATE.config.get("target_curve_points_db") or []
+                    if index < len(current):
+                        current[index][coord] = number
+                        STATE.mark_config_changed()
+
                 for index, point in enumerate(points):
                     with ui.row().classes("items-end gap-2"):
 
-                        def on_freq(event, point=point) -> None:
-                            try:
-                                point[0] = float(event.value)
-                            except (TypeError, ValueError):
-                                pass
+                        def on_freq(event, index=index) -> None:
+                            set_point(index, 0, event.value)
 
-                        def on_db(event, point=point) -> None:
-                            try:
-                                point[1] = float(event.value)
-                            except (TypeError, ValueError):
-                                pass
+                        def on_db(event, index=index) -> None:
+                            set_point(index, 1, event.value)
 
                         def remove(index=index) -> None:
-                            points.pop(index)
+                            current = STATE.config.get("target_curve_points_db") or []
+                            if index < len(current):
+                                current.pop(index)
+                                STATE.mark_config_changed()
                             self._target_section.refresh()
 
                         ui.number("Hz", value=point[0], min=1, format="%.6g", on_change=on_freq).classes(
@@ -742,7 +742,8 @@ class ConfigTab:
                         ui.button(icon="delete", on_click=remove).props("flat dense")
 
                 def add_point() -> None:
-                    points.append([1000.0, 0.0])
+                    STATE.config.setdefault("target_curve_points_db", []).append([1000.0, 0.0])
+                    STATE.mark_config_changed()
                     self._target_section.refresh()
 
                 ui.button("Add point", icon="add", on_click=add_point).props("flat")
