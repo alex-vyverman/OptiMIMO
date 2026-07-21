@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
-from scipy.io import wavfile
+from . import wav
 
 from ..util import EPS, next_power_of_two
 from .smoothing import _build_log_smoothing_grid
@@ -30,7 +30,7 @@ def read_config(path: Path) -> dict[str, Any]:
 
 
 def load_wav_ir(path: Path, wav_channel: int = 0) -> tuple[int, np.ndarray]:
-    sample_rate, data = wavfile.read(path)
+    sample_rate, data = wav.read(path)
     array = np.asarray(data)
     if array.ndim == 2:
         if wav_channel < 0 or wav_channel >= array.shape[1]:

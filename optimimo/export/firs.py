@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.io import wavfile
+from ..core import wav
 
 
 def export_firs(
@@ -29,7 +29,7 @@ def export_firs(
             item: dict[str, Path] = {}
             if output_format in {"wav", "both"}:
                 wav_path = output_dir / f"{stem}.wav"
-                wavfile.write(wav_path, sample_rate, coeffs.astype(np.float32))
+                wav.write(wav_path, sample_rate, coeffs.astype(np.float32))
                 item["wav"] = wav_path
             if output_format in {"txt", "both"}:
                 txt_path = output_dir / f"{stem}.txt"

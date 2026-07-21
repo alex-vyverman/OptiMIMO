@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 import numpy as np
-from scipy import signal
+
 
 from ..util import EPS, amplitude_to_db, db_to_amplitude, db_to_power
 
@@ -301,7 +301,8 @@ def frequency_matrix_to_firs(x_freq: np.ndarray, config: Mapping[str, Any]) -> t
     fade_out_samples = int(config.get("fade_out_samples", 0))
     if fade_out_samples > 0:
         fade_len = min(fade_out_samples, filter_taps)
-        tail = signal.windows.hann(2 * fade_len, sym=True)[fade_len:]
+        m = 2 * fade_len
+        tail = (0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(fade_len, m, dtype=np.float64) / (m - 1)))
         if tail.size != fade_len:
             tail = np.linspace(1.0, 0.0, fade_len, dtype=np.float64)
         window = np.ones(filter_taps, dtype=np.float64)

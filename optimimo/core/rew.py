@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
-from scipy.io import wavfile
+from . import wav
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4735
@@ -280,7 +280,7 @@ def download_measurements_to_wavs(
         else:
             placed = np.ascontiguousarray(samples[-lead:], dtype=np.float32)
         path = out_dir / f"spk{int(item['speaker']):02d}_mic{int(item['mic']):02d}.wav"
-        wavfile.write(str(path), fs, placed)
+        wav.write(str(path), fs, placed)
         entry: dict[str, Any] = {
             "mic": int(item["mic"]),
             "speaker": int(item["speaker"]),

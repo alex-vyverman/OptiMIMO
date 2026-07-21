@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from scipy.io import wavfile
+from optimimo.core import wav
 
 from optimimo.core.delay_estimator import suggest_target_delay_ms
 
@@ -14,7 +14,7 @@ SAMPLE_RATE = 48000
 
 
 def _write_ir(path: Path, impulse: np.ndarray) -> None:
-    wavfile.write(path, SAMPLE_RATE, impulse.astype(np.float32))
+    wav.write(path, SAMPLE_RATE, impulse.astype(np.float32))
 
 
 def _delta_ir(length: int, delay_samples: int, amp: float = 1.0) -> np.ndarray:

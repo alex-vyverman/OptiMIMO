@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from nicegui import ui
 from nicegui.testing import User
-from scipy.io import wavfile
+from optimimo.core import wav
 
 from optimimo.cli import synthetic_room_irs
 from optimimo.gui.state import STATE
@@ -68,7 +68,7 @@ async def test_measurement_ir_plot_renders(user: User, tmp_path: Path) -> None:
     for mic in range(2):
         for speaker in range(2):
             path = tmp_path / f"ir_m{mic}_s{speaker}.wav"
-            wavfile.write(path, fs, room[mic, speaker].astype(np.float32))
+            wav.write(path, fs, room[mic, speaker].astype(np.float32))
             measurements.append({"speaker": speaker, "mic": mic, "path": str(path)})
 
     STATE.config = {
@@ -133,7 +133,7 @@ async def test_full_solve_through_gui(user: User, tmp_path: Path) -> None:
     for mic in range(num_mics):
         for speaker in range(num_speakers):
             path = tmp_path / f"ir_m{mic}_s{speaker}.wav"
-            wavfile.write(path, sample_rate, room[mic, speaker].astype(np.float32))
+            wav.write(path, sample_rate, room[mic, speaker].astype(np.float32))
             measurements.append({"speaker": speaker, "mic": mic, "path": str(path)})
 
     STATE.config = {
