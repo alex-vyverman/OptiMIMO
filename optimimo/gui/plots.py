@@ -48,8 +48,18 @@ def group_delay_ms(values: np.ndarray, freqs: np.ndarray) -> np.ndarray:
 
 
 def achieved_response(result: SolveResult) -> np.ndarray:
-    """Predicted corrected response H X at every mic: shape (F, M, K)."""
-    return np.einsum("fms,fsk->fmk", result.h_freq, result.x_freq)
+    """Predicted corrected response H X at every mic: shape (F, M, K).
+
+    X is the frequency response of the *exported* FIRs (rfft of the truncated,
+    faded, gain-capped coefficients at the solve's fft_size), not the ideal
+    frequency-domain solution — so the prediction reflects what the filters
+    actually do once loaded into the convolver. H is the (possibly smoothed)
+    measured matrix the solver saw, so any remaining difference to a
+    verification measurement is the documented smoothing intent, not the
+    filter export.
+    """
+    x_exported = np.fft.rfft(result.firs, n=result.diagnostics.fft_size, axis=0)
+    return np.einsum("fms,fsk->fmk", result.h_freq, x_exported)
 
 
 def mic_weights(result: SolveResult) -> np.ndarray:

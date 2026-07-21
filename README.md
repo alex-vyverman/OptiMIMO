@@ -81,7 +81,7 @@ Runs a pre-flight config check, then the solve. Progress is reported per stage a
 Interactive plots from the most recent solve:
 
 - Measured responses per speaker, overlaid across mic positions
-- Predicted corrected response vs target per mic, with a per-band residual-error table
+- Predicted corrected response vs target per mic, with a per-band residual-error table. The prediction applies the *exported* FIRs (truncation, fade-out and gain caps included) to the measured matrix the solver saw, so it reflects what the filters actually do once loaded into the convolver; any remaining difference to a verification measurement is the documented `h_smoothing_fraction` intent, not the filter export.
 - Filter magnitudes per crosspoint
 - Impulse envelopes with a target-delay marker and pre-ringing metric
 
