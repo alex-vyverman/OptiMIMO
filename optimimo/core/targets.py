@@ -13,6 +13,21 @@ from ..util import EPS, db_to_amplitude
 from .smoothing import _arrival_seconds, _build_log_smoothing_grid, _smooth_complex_spectrum
 
 
+def target_delay_seconds(config: Mapping[str, Any]) -> float:
+    """Configured target (bulk) delay in seconds, with a mode-dependent default.
+
+    Flat targets demand linear phase plus a fixed delay at every mic, which is
+    physically impossible for spaced mics and needs generous delay for the
+    inverse to be causal; anchored targets keep the primary's natural (mostly
+    causal) phase and tolerate less. The defaults follow the README guidance:
+    180 ms flat, 100 ms anchored.
+    """
+    if "target_delay_ms" in config:
+        return float(config["target_delay_ms"]) / 1000.0
+    mode = str(config.get("target_mode", "flat")).lower()
+    return (100.0 if mode == "anchored" else 180.0) / 1000.0
+
+
 def target_curve_amplitude(freqs: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
     resolved = config.get("_resolved_curve_points")
     if resolved is not None:
@@ -108,7 +123,7 @@ def build_target_matrix(
     target_amp = target_curve_amplitude(freqs, config)
     target_level = resolve_target_level(freqs, h_freq, profile_weights, mic_weights, config)
 
-    delay_s = float(config.get("target_delay_ms", 40.0)) / 1000.0
+    delay_s = target_delay_seconds(config)
     phase = np.exp(-2j * np.pi * freqs * delay_s)
     y_freq = (
         target_level
@@ -192,7 +207,7 @@ def build_anchored_target_matrix(
 
     target_amp = target_curve_amplitude(freqs, config)
     target_level = resolve_target_level(freqs, h_freq, profile_weights, mic_weights, config)
-    delay_s = float(config.get("target_delay_ms", 40.0)) / 1000.0
+    delay_s = target_delay_seconds(config)
     bulk_phase = np.exp(-2j * np.pi * freqs * delay_s)
 
     fraction = float(config.get("anchor_phase_smoothing_fraction", 1.0))

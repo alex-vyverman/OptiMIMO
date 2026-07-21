@@ -17,6 +17,7 @@ from typing import Callable, Optional
 from nicegui import run, ui
 
 from ..core.delay_estimator import suggest_target_delay_ms
+from ..defaults import app_default
 from .file_picker import pick_file
 from .state import STATE
 
@@ -184,14 +185,18 @@ async def _show_delay_diagnostic() -> None:
             ui.button("Close", on_click=dialog.close).props("flat")
 
 
-def _num(label: str, key: str, default: float, *, fmt: str = "%.6g", tooltip: str | None = None, **kwargs) -> ui.number:
+def _num(label: str, key: str, default: float | None = None, *, fmt: str = "%.6g", tooltip: str | None = None, **kwargs) -> ui.number:
     """Number input that binds directly to STATE.config[key].
-    
+
+    The field default comes from the application preset (``app_default``) so
+    the GUI cannot drift from the canonical defaults; ``default`` is only a
+    last-resort fallback for keys the preset does not know.
+
     The element is built once and never recreated, so its callback
     remains valid even after page reloads or tab switches.
     """
     if key not in STATE.config:
-        STATE.config[key] = default
+        STATE.config[key] = app_default(key, default)
 
     def on_change(e):
         STATE.config[key] = e.value
@@ -204,10 +209,13 @@ def _num(label: str, key: str, default: float, *, fmt: str = "%.6g", tooltip: st
     return field
 
 
-def _toggle(label: str, key: str, default: bool, *, tooltip: str | None = None) -> ui.switch:
-    """Toggle switch that binds directly to STATE.config[key]."""
+def _toggle(label: str, key: str, default: bool | None = None, *, tooltip: str | None = None) -> ui.switch:
+    """Toggle switch that binds directly to STATE.config[key].
+
+    Like ``_num``, the default comes from the application preset.
+    """
     if key not in STATE.config:
-        STATE.config[key] = default
+        STATE.config[key] = app_default(key, default)
 
     def on_change(e):
         STATE.config[key] = e.value
@@ -260,6 +268,7 @@ class ConfigTab:
             self._target_section()
             self._filter_section()
             self._smoothing_section()
+            self._advanced_section()
             self._output_section()
 
     def refresh_all(self) -> None:
@@ -277,19 +286,21 @@ class ConfigTab:
         self._target_section.refresh()
         self._filter_section.refresh()
         self._smoothing_section.refresh()
+        self._advanced_section.refresh()
         self._output_section.refresh()
         if self.on_config_replaced is not None:
             self.on_config_replaced()
 
     def _refresh_dependent_sections(self) -> None:
         """Refresh sections that depend on speaker/input/mic dimensions.
-        
+
         Triggered by the Dimensions inputs; deliberately does NOT refresh the
         Dimensions section itself so the number field being edited keeps focus.
         """
         self._profiles_section.refresh()
         self._routing_section.refresh()
         self._target_section.refresh()
+        self._advanced_section.refresh()
         if self.on_config_replaced is not None:
             self.on_config_replaced()
 
@@ -348,34 +359,14 @@ class ConfigTab:
                     self._file_bar.refresh()
 
                 def new() -> None:
-                    STATE.new_from_example()
-                    ui.notify("New config from example", type="info")
+                    STATE.new_from_template()
+                    ui.notify("New config from template", type="info")
                     self.refresh_all()
-
-                async def show_config() -> None:
-                    """Display current STATE.config in a dialog for inspection."""
-                    import json
-                    config_json = json.dumps(STATE.config, indent=2, default=str)
-                    with ui.dialog() as dialog, ui.card().classes("w-[60rem] max-w-full"):
-                        ui.label("Current Config State").classes("text-lg font-medium mb-2")
-                        ui.label(f"Total keys: {len(STATE.config)}").classes("text-xs text-gray-500 mb-2")
-                        ui.textarea(value=config_json).classes("w-full h-96").props("readonly")
-                        with ui.row().classes("w-full justify-end gap-2 mt-2"):
-                            ui.button("Close", on_click=dialog.close).props("flat")
-                    dialog.open()
-
-                def force_refresh() -> None:
-                    """Force a complete UI refresh to recover from orphaned elements."""
-                    print("[FORCE REFRESH] Rebuilding all UI elements...")
-                    self.refresh_all()
-                    ui.notify("UI refreshed. All elements rebuilt.", type="positive")
 
                 ui.button("Load", icon="folder_open", on_click=load).props("flat")
                 ui.button("Save", icon="save", on_click=save).props("flat")
                 ui.button("Save as", icon="save_as", on_click=save_as).props("flat")
                 ui.button("New", icon="add", on_click=new).props("flat")
-                ui.button("Show Config", icon="visibility", on_click=show_config).props("flat")
-                ui.button("Force Refresh", icon="refresh", on_click=force_refresh).props("flat")
 
     # ------------------------------------------------------------------
     # Sections
@@ -393,13 +384,13 @@ class ConfigTab:
         on_change = lambda: self._on_dimensions_change()  # noqa: E731
         with ui.expansion("Dimensions", icon="grid_view", value=True).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):
-                ui.number("Speakers", value=STATE.config.get("num_speakers", 5), min=1, max=32, format="%d",
+                ui.number("Speakers", value=STATE.config.get("num_speakers", app_default("num_speakers", 3)), min=1, max=32, format="%d",
                          on_change=lambda e: (STATE.config.__setitem__("num_speakers", e.value), on_change())).classes("w-32")
                 _info("Number of physical output channels (N). Speaker indices used everywhere else refer to this ordering.")
-                ui.number("Inputs", value=STATE.config.get("num_inputs", 2), min=1, max=32, format="%d",
+                ui.number("Inputs", value=STATE.config.get("num_inputs", app_default("num_inputs", 2)), min=1, max=32, format="%d",
                          on_change=lambda e: (STATE.config.__setitem__("num_inputs", e.value), on_change())).classes("w-32")
                 _info("Number of input channels (K), e.g. 2 for stereo sources. Produces N×K FIR filters.")
-                ui.number("Mic positions", value=STATE.config.get("num_mic_positions", 12), min=1, max=64, format="%d",
+                ui.number("Mic positions", value=STATE.config.get("num_mic_positions", app_default("num_mic_positions", 3)), min=1, max=64, format="%d",
                          on_change=lambda e: (STATE.config.__setitem__("num_mic_positions", e.value), on_change())).classes("w-32")
                 _info("Number of microphone positions (M) in the measurement grid.")
                 _num("Sample rate", "sample_rate", 96000, fmt="%d",
@@ -446,10 +437,6 @@ class ConfigTab:
                         ui.number("Transition Hz", value=entry.get("transition_hz", 10.0), min=0, format="%.6g",
                                  on_change=lambda e, i=index: set_profile(i, "transition_hz", e.value)).classes("w-32")
                         _info("Raised-sine ramp width inside the band edges. Creates a smooth rolloff transition instead of a hard cutoff.")
-                        
-                        ui.number("Effort penalty dB", value=entry.get("effort_penalty_db", 0.0), min=0, format="%.6g",
-                                 on_change=lambda e, i=index: set_profile(i, "effort_penalty_db", e.value)).classes("w-32")
-                        _info("Extra regularization to make the solver prefer other speakers over this one. Higher values reduce this speaker's contribution.")
 
             ui.separator()
             with ui.row().classes("items-center gap-2"):
@@ -568,7 +555,7 @@ class ConfigTab:
                 ).classes("w-72")
                 _info("flat: identical house-curve target at all mics. anchored: target derived from each input's primary speaker, preserving natural arrival time and geometry.")
                 target_delay_input = _num("Target delay ms", "target_delay_ms", 100.0,
-                     tooltip="Bulk delay built into the target so the inverse can be causal. Becomes system latency. Flat mode needs ~180ms; anchored tolerates ~80-100ms.")
+                     tooltip="Bulk delay built into the target so the inverse can be causal. Becomes system latency. Flat mode needs ~180ms; anchored tolerates ~80-100ms. When omitted, defaults to 180 (flat) / 100 (anchored).")
                 ui.button(
                     "Estimate",
                     icon="auto_fix_high",
@@ -585,8 +572,30 @@ class ConfigTab:
                     "Open a per-measurement breakdown so you can see which speaker/mic "
                     "pair is driving the recommendation."
                 )
-                _toggle("Auto target level", "auto_target_level", True,
-                        tooltip="Scale the target from the median measured in-band response power, so results don't depend on absolute REW export level.")
+
+                def on_auto_level(event) -> None:
+                    enabled = bool(event.value)
+                    STATE.config["auto_target_level"] = enabled
+                    if enabled:
+                        # An explicit level left in the config would override
+                        # auto in resolve_target_level, so drop it.
+                        STATE.config.pop("target_level_linear", None)
+                    else:
+                        STATE.config.setdefault(
+                            "target_level_linear", app_default("target_level_linear", 1.0)
+                        )
+                    STATE.mark_config_changed()
+                    self._target_section.refresh()
+
+                ui.switch(
+                    "Auto target level",
+                    value=bool(STATE.config.get("auto_target_level", True)),
+                    on_change=on_auto_level,
+                )
+                _info("Scale the target from the median measured in-band response power, so results don't depend on absolute REW export level.")
+                if not bool(STATE.config.get("auto_target_level", True)):
+                    _num("Target level (linear)", "target_level_linear", 1.0, fmt="%.4g",
+                         tooltip="Explicit linear target magnitude the solver aims for. Only used because auto target level is off — set this to match the absolute scale of your measurements.")
 
             if str(STATE.config.get("target_mode", "flat")).lower() == "anchored":
                 profiles = STATE.config["speaker_profiles"]
@@ -748,37 +757,34 @@ class ConfigTab:
 
                 ui.button("Add point", icon="add", on_click=add_point).props("flat")
 
-            _sync_reference_band()
-            ui.separator()
-            with ui.row().classes("items-end gap-4 flex-wrap"):
-                _num("Reference band low Hz", "_ref_low", 20.0,
-                     tooltip="Lower bound of the reference band used for auto target level, regularization reference power, and anchored-mode level estimation.")
-                _num("Reference band high Hz", "_ref_high", 200.0,
-                     tooltip="Upper bound of the reference band used for auto target level, regularization reference power, and anchored-mode level estimation.")
-
     @ui.refreshable_method
     def _filter_section(self) -> None:
         with ui.expansion("Filter dimensions and protection", icon="tune", value=True).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):
                 _num("Filter taps", "filter_taps", 65536, fmt="%d",
                      tooltip="Length of the exported FIR filters. Determines how long a correction can ring. 65536 taps at 96 kHz is 683 ms.")
-                _num("FFT size (0 = auto)", "fft_size", 0, fmt="%d",
-                     tooltip="Solve resolution. Must be at least ir_length + filter_taps - 1. Auto picks the next power of two. Larger values give the inverse more time to decay before the circular wrap point.")
                 _num("IR crop start (ms)", "ir_crop_start_ms", 0.0,
                      tooltip="Discard this much from the start of every IR before processing. Use when all exports share a common bulk pre-roll (e.g. REW timing-reference offset). Never crop per-measurement, that destroys relative timing. Applied symmetrically; use the Show diagnostic dialog to see each IR's peak position before choosing a value.")
-                _num("IR length samples (0 = auto)", "ir_length_samples", 0, fmt="%d",
-                     tooltip="Length to which all IRs are cropped/zero-padded. Sets the low-frequency resolution of the measurement data.")
-                _num("Fade-out samples", "fade_out_samples", 2048, fmt="%d",
-                     tooltip="Hann fade applied to the FIR tail to avoid a truncation discontinuity.")
             with ui.row().classes("items-end gap-4 flex-wrap"):
                 _num("Max boost dB", "max_boost_db", 9.0,
                      tooltip="Hard cap on filter gain, applied per crosspoint and optionally per speaker row sum, plus once more after FIR truncation.")
-                _num("Max cut dB", "max_cut_db", 18.0,
-                     tooltip="Floor for the diagonal filter magnitude. Only enforced when enforce_diagonal_cut_floor is true.")
                 _toggle("Row-sum gain cap", "enforce_row_sum_gain_cap", True,
                         tooltip="Cap the summed drive each physical speaker can receive across all inputs, not just each individual filter.")
-                _toggle("Diagonal cut floor", "enforce_diagonal_cut_floor", False,
-                        tooltip="Prevent the direct input-to-primary path from being cut below max_cut_db.")
+
+                def on_diag_floor(event) -> None:
+                    STATE.config["enforce_diagonal_cut_floor"] = bool(event.value)
+                    STATE.mark_config_changed()
+                    self._filter_section.refresh()
+
+                ui.switch(
+                    "Diagonal cut floor",
+                    value=bool(STATE.config.get("enforce_diagonal_cut_floor", False)),
+                    on_change=on_diag_floor,
+                )
+                _info("Prevent the direct input-to-primary path from being cut below max_cut_db.")
+                if bool(STATE.config.get("enforce_diagonal_cut_floor", False)):
+                    _num("Max cut dB", "max_cut_db", 18.0,
+                         tooltip="Floor for the diagonal filter magnitude. Only enforced while the diagonal cut floor switch is on.")
 
     @ui.refreshable_method
     def _smoothing_section(self) -> None:
@@ -788,11 +794,49 @@ class ConfigTab:
                      tooltip="Fractional-octave complex smoothing of the measured room matrix H(f) before solving. Each measurement is de-rotated by its direct-sound arrival time before smoothing, so relative phase is preserved. Equivalent to REW's frequency-dependent window.")
                 _num("X smoothing (1/N oct, 0 = off)", "x_smoothing_fraction", 6.0,
                      tooltip="Same smoothing applied to the solved filters X(f). Bounds the Q of every filter feature so FIRs decay well within filter_taps. Enable if diagnostics warn about wrap-point energy.")
+
+    @ui.refreshable_method
+    def _advanced_section(self) -> None:
+        """Expert knobs, collapsed by default; the defaults are right for
+        almost every setup. Everything here also lives in the config file."""
+        with ui.expansion("Advanced", icon="engineering", value=False).classes("w-full"):
             with ui.row().classes("items-end gap-4 flex-wrap"):
+                _num("FFT size (0 = auto)", "fft_size", 0, fmt="%d",
+                     tooltip="Solve resolution. Must be at least ir_length + filter_taps - 1. Auto picks the next power of two. Larger values give the inverse more time to decay before the circular wrap point.")
+                _num("IR length samples (0 = auto)", "ir_length_samples", 0, fmt="%d",
+                     tooltip="Length to which all IRs are cropped/zero-padded. Sets the low-frequency resolution of the measurement data.")
+                _num("Fade-out samples", "fade_out_samples", 2048, fmt="%d",
+                     tooltip="Hann fade applied to the FIR tail to avoid a truncation discontinuity.")
                 _num("Authority floor dB", "authority_floor_db", -30.0,
                      tooltip="Speakers whose measured in-band response falls below this relative level get progressively stronger regularization instead of being boosted into inaudibility.")
-                _num("Profile disable threshold", "profile_disable_threshold", 1.0e-4, fmt="%.2e",
-                     tooltip="Profile weight below which a speaker counts as fully disabled at that frequency.")
+            _sync_reference_band()
+            with ui.row().classes("items-end gap-4 flex-wrap"):
+                _num("Reference band low Hz", "_ref_low", 20.0,
+                     tooltip="Lower bound of the reference band used for auto target level, regularization reference power, and anchored-mode level estimation.")
+                _num("Reference band high Hz", "_ref_high", 200.0,
+                     tooltip="Upper bound of the reference band used for auto target level, regularization reference power, and anchored-mode level estimation.")
+            ui.separator()
+            with ui.row().classes("items-center gap-2"):
+                ui.label("Effort penalty per speaker (dB)").classes("font-medium")
+                _info("Extra regularization to make the solver prefer other speakers over this one. Higher values reduce that speaker's contribution.")
+            profiles = STATE.config["speaker_profiles"]
+            with ui.row().classes("gap-3 flex-wrap items-start"):
+                for index in range(STATE.num_speakers()):
+
+                    def on_effort(event, index=index) -> None:
+                        try:
+                            value = float(event.value)
+                        except (TypeError, ValueError):
+                            return
+                        STATE.config["speaker_profiles"][str(index)]["effort_penalty_db"] = value
+                        STATE.mark_config_changed()
+
+                    entry = profiles[str(index)]
+                    ui.number(
+                        entry.get("name", f"Speaker {index}"),
+                        value=entry.get("effort_penalty_db", 0.0),
+                        min=0, format="%.6g", on_change=on_effort,
+                    ).classes("w-32")
 
     @ui.refreshable_method
     def _output_section(self) -> None:

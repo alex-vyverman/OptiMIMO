@@ -73,6 +73,36 @@ def write_example_config(path: Path) -> None:
         handle.write("\n")
 
 
+def minimal_config() -> dict[str, Any]:
+    """Minimal 2.1 starting template (1 sub + stereo mains, 3 mic positions).
+
+    This is what the GUI's "New" button and a fresh app session start from: a
+    generic small system that only needs measurement assignments, rather than
+    the full opinionated ``example_config`` preset. Scalar defaults not listed
+    here are filled in from the application preset (``optimimo.defaults``)
+    when the corresponding Config tab field is first shown.
+    """
+    return {
+        "num_speakers": 3,
+        "num_inputs": 2,
+        "num_mic_positions": 3,
+        "sample_rate": 96000,
+        "measurement_pattern": "ir/{speaker_name}_{mic_name}.wav",
+        "mic_names": ["MLP", "MLP_L", "MLP_R"],
+        "mic_weights": [1.0, 0.75, 0.75],
+        "speaker_profiles": {
+            "0": {"name": "Sub", "min_hz": 20.0, "max_hz": 120.0, "transition_hz": 12.0},
+            "1": {"name": "Main L", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
+            "2": {"name": "Main R", "min_hz": 20.0, "max_hz": 20000.0, "transition_hz": 10.0},
+        },
+        "input_speakers": {"0": [0, 1], "1": [0, 2]},
+        "target_mode": "anchored",
+        "input_primary_speaker": {"0": 1, "1": 2},
+        "target_curve_points_db": [[20.0, 0.0], [20000.0, 0.0]],
+        "auto_target_level": True,
+    }
+
+
 def run_pipeline(config_path: Path) -> None:
     config = read_config(config_path)
     base_dir = config_path.resolve().parent

@@ -48,8 +48,10 @@ The GUI covers the full workflow end-to-end: configure the solve, assign measure
 All solver parameters are grouped exactly as in the [Configuration Reference](#configuration-reference) below. The same JSON files used by `--config` on the CLI load and save here, so configs are interchangeable between projects and machines.
 
 - Edit parameters inline with validation as you type
-- Load / Save buttons read and write JSON
+- Load / Save buttons read and write JSON; **New** starts from a minimal 2.1 template (1 sub + stereo mains, 3 mic positions) that only needs measurement assignments
 - Group-by-group layout matches the reference tables for easy lookup
+- Expert knobs (FFT size, IR length, fade-out, authority floor, reference band, per-speaker effort penalty) live under the collapsed **Advanced** section; the defaults are right for almost every setup
+- Fields that only apply in a specific mode appear only when relevant: the per-input primary speakers and anchor tuning show in anchored mode, **Max cut dB** shows while the diagonal cut floor is on, and **Target level (linear)** appears when auto target level is off
 
 ### Measurements tab
 
@@ -196,7 +198,7 @@ resolves that crosspoint to `measurements/Main L_MLP.wav`. Mic position names ar
 
 ## Configuration Reference
 
-An up-to-date example lives in `example_config.json` (regenerate any time from the GUI's Config tab or with `--write-example-config`). All parameters by group:
+An up-to-date example lives in `example_config.json` (regenerate any time from the GUI's Config tab or with `--write-example-config`). The defaults below are the solver (library) fallbacks used when a config file omits a key; the GUI ships an opinionated application preset on top (see `optimimo/defaults.py`, derived from `example_config`). All parameters by group:
 
 ### Dimensions and measurements
 
@@ -218,7 +220,7 @@ An up-to-date example lives in `example_config.json` (regenerate any time from t
 |---|---|---|
 | `filter_taps` | `8192` | Length of the exported FIR filters. Determines how long a correction can ring; 65536 taps at 96 kHz is 683 ms. |
 | `fft_size` | auto | Solve resolution; must be at least `ir_length + filter_taps - 1` (auto picks the next power of two). Larger values give the inverse more time to decay before the circular wrap point. |
-| `target_delay_ms` | `40.0` | Bulk delay built into the target so the inverse can be causal (becomes system latency). Flat mode needs generous values (~180 ms); anchored mode tolerates less (~80–100 ms) because its phase target is mostly causal. |
+| `target_delay_ms` | `180` flat / `100` anchored | Bulk delay built into the target so the inverse can be causal (becomes system latency). Flat mode needs generous values (~180 ms); anchored mode tolerates less (~80–100 ms) because its phase target is mostly causal. |
 | `fade_out_samples` | `0` | Hann fade applied to the FIR tail to avoid a truncation discontinuity. |
 
 ### Speaker protection
@@ -227,7 +229,7 @@ An up-to-date example lives in `example_config.json` (regenerate any time from t
 |---|---|---|
 | `speaker_profiles` | required | Per speaker: `name`, `min_hz`/`max_hz` (safe operating band — the speaker is removed from the optimization outside it), `transition_hz` (raised-sine ramp width inside the band edges), `effort_penalty_db` (optional extra regularization to make the solver prefer other speakers). |
 | `max_boost_db` | `9.0` | Hard cap on filter gain, applied per crosspoint and (optionally) per speaker row sum, plus once more after FIR truncation. |
-| `max_cut_db` | `120` | Floor for the diagonal filter magnitude; only enforced when `enforce_diagonal_cut_floor` is true. |
+| `max_cut_db` | `18` | Floor for the diagonal filter magnitude; only enforced when `enforce_diagonal_cut_floor` is true. |
 | `enforce_row_sum_gain_cap` | `true` | Cap the *summed* drive each physical speaker can receive across all inputs, not just each individual filter. |
 | `enforce_diagonal_cut_floor` | `false` | Prevent the direct input-to-primary path from being cut below `max_cut_db`. |
 | `enforce_final_gain_cap` | `true` | Re-check and rescale gains after FIR truncation and windowing. |

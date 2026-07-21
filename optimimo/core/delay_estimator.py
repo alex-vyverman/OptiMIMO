@@ -29,6 +29,7 @@ import numpy as np
 from ..util import next_power_of_two
 from .io import compute_measurement_arrivals, load_measurement_matrix
 from .smoothing import fractional_octave_complex_smooth
+from .targets import target_delay_seconds
 
 
 def suggest_target_delay_ms(
@@ -152,7 +153,7 @@ def suggest_target_delay_ms(
     target_mode = str(config.get("target_mode", "flat")).lower()
     margin = anchored_margin_ms if target_mode == "anchored" else flat_margin_ms
     recommended_ms = max_gd_ms + margin
-    current_ms = float(config.get("target_delay_ms", 40.0))
+    current_ms = target_delay_seconds(config) * 1000.0
 
     fft_size = int(config.get("fft_size", 0) or 0)
     filter_taps = int(config.get("filter_taps", 8192))

@@ -186,8 +186,8 @@ def solve_frequency_domain_filters(
     num_inputs = y_freq.shape[2]
 
     max_boost_db = float(config.get("max_boost_db", 9.0))
-    max_boost = db_to_amplitude(abs(max_boost_db))
-    max_cut_db = abs(float(config.get("max_cut_db", 120.0)))
+    max_boost = db_to_amplitude(max_boost_db)
+    max_cut_db = abs(float(config.get("max_cut_db", 18.0)))
     min_direct_gain = db_to_amplitude(-max_cut_db)
     enforce_diagonal_cut_floor = bool(config.get("enforce_diagonal_cut_floor", False))
     enforce_row_sum_gain_cap = bool(config.get("enforce_row_sum_gain_cap", True))

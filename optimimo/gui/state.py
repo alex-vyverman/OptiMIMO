@@ -11,13 +11,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from ..cli import example_config
+from ..cli import example_config, minimal_config
 from ..core.pipeline import ExportPaths, SolveResult
 
 
 @dataclass
 class AppState:
-    config: dict[str, Any] = field(default_factory=example_config)
+    config: dict[str, Any] = field(default_factory=minimal_config)
     config_path: Optional[Path] = None
     result: Optional[SolveResult] = None
     export_paths: Optional[ExportPaths] = None
@@ -89,6 +89,14 @@ class AppState:
 
     def new_from_example(self) -> None:
         self.config = example_config()
+        self.config_path = None
+        self.result = None
+        self.export_paths = None
+        self.normalize_config()
+
+    def new_from_template(self) -> None:
+        """Start a new project from the minimal 2.1 template."""
+        self.config = minimal_config()
         self.config_path = None
         self.result = None
         self.export_paths = None

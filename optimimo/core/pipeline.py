@@ -38,6 +38,7 @@ from .targets import (
     estimate_reference_power,
     parse_input_primary_speakers,
     target_curve_amplitude,
+    target_delay_seconds,
 )
 
 ProgressFn = Callable[[str, float], None]
@@ -185,7 +186,7 @@ def solve(
             x_freq,
             freqs,
             x_smoothing_fraction,
-            float(config.get("target_delay_ms", 40.0)) / 1000.0,
+            target_delay_seconds(config),
             fft_size,
             progress=(lambda f: _report(progress, "smooth_x", 0.7 + 0.145 * f)),
             cancel=cancel,

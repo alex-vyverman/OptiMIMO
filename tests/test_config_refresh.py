@@ -20,6 +20,7 @@ ALL_SECTIONS = [
     "_target_section",
     "_filter_section",
     "_smoothing_section",
+    "_advanced_section",
     "_output_section",
 ]
 

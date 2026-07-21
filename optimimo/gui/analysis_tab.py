@@ -10,6 +10,7 @@ from nicegui import ui
 from plotly.subplots import make_subplots
 
 from ..core.pipeline import SolveResult
+from ..core.targets import target_delay_seconds
 from . import plots
 from .state import STATE
 
@@ -476,7 +477,7 @@ def _impulse_figure(result: SolveResult, key: str) -> go.Figure:
     output, input_channel = _parse_crosspoint(key)
     fir = result.firs[:, output, input_channel]
     time_s, envelope = plots.impulse_envelope(fir, result.sample_rate)
-    delay_s = float(result.config.get("target_delay_ms", 40.0)) / 1000.0
+    delay_s = target_delay_seconds(result.config)
     figure = go.Figure()
     figure.add_trace(go.Scattergl(
         x=time_s * 1000.0, y=envelope, mode="lines", name="|FIR| envelope",
@@ -500,7 +501,7 @@ def _impulse_figure(result: SolveResult, key: str) -> go.Figure:
 def _impulse_metrics(result: SolveResult, key: str) -> str:
     output, input_channel = _parse_crosspoint(key)
     fir = result.firs[:, output, input_channel]
-    delay_s = float(result.config.get("target_delay_ms", 40.0)) / 1000.0
+    delay_s = target_delay_seconds(result.config)
     pre = plots.pre_delay_energy_ratio_db(fir, result.sample_rate, delay_s)
     return (
         f"Pre-delay energy (before 90% of target delay): {pre:.1f} dB of total. "
