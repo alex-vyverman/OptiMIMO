@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptiMIMO — Browser MIMO Room Correction</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-dim: #8b949e; --accent: #58a6ff;
+    --accent-hover: #79c0ff; --success: #3fb950; --error: #f85149;
+    --warn: #d29922; --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+  header { text-align: center; margin-bottom: 32px; }
+  header h1 { font-size: 28px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  header p { color: var(--text-dim); margin-top: 4px; font-size: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--accent); }
+  .card h3 { font-size: 14px; font-weight: 600; margin: 12px 0 8px; color: var(--text); }
+  .form-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 12px; color: var(--text-dim); font-weight: 500; }
+  .form-group input, .form-group select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; font-family: var(--mono); width: 100px; }
+  .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--accent); }
+  .form-group input[type="number"] { width: 80px; }
+  .form-group input[type="text"] { width: 200px; }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: var(--border); color: var(--text); }
+  .btn-secondary:hover { background: #3d444d; }
+  .btn-success { background: var(--success); }
+  .btn-success:hover { background: #2ea043; }
+  .btn-danger { background: var(--error); }
+  .btn-danger:hover { background: #da3633; }
+  .btn-sm { padding: 4px 12px; font-size: 12px; }
+  .progress-container { margin: 16px 0; }
+  .progress-bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-bar { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s ease; width: 0%; }
+  .progress-label { font-size: 13px; color: var(--text-dim); margin-top: 6px; font-family: var(--mono); }
+  .status { font-size: 13px; padding: 8px 12px; border-radius: 6px; margin: 8px 0; }
+  .status-info { background: rgba(88,166,255,0.1); color: var(--accent); border: 1px solid rgba(88,166,255,0.2); }
+  .status-success { background: rgba(63,185,80,0.1); color: var(--success); border: 1px solid rgba(63,185,80,0.2); }
+  .status-error { background: rgba(248,81,73,0.1); color: var(--error); border: 1px solid rgba(248,81,73,0.2); }
+  .status-warn { background: rgba(210,153,34,0.1); color: var(--warn); border: 1px solid rgba(210,153,34,0.2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { font-family: var(--mono); }
+  .speaker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+  .speaker-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .speaker-card h4 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--accent); }
+  .speaker-card .form-row { margin-bottom: 4px; }
+  .speaker-card .form-group input { width: 70px; }
+  .speaker-card .form-group input[type="text"] { width: 100px; }
+  .measurement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin: 12px 0; }
+  .measurement-slot { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 12px; }
+  .measurement-slot .label { color: var(--text-dim); font-size: 11px; }
+  .measurement-slot select { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); padding: 4px; font-size: 12px; margin-top: 4px; }
+  .hidden { display: none !important; }
+  .tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 16px; font-size: 14px; font-weight: 500; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  #log { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: var(--mono); font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4; }
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .results-grid { grid-template-columns: 1fr; } }
+  .file-drop { border: 2px dashed var(--border); border-radius: 8px; padding: 32px; text-align: center; color: var(--text-dim); cursor: pointer; transition: border-color 0.15s; }
+  .file-drop:hover, .file-drop.dragover { border-color: var(--accent); color: var(--accent); }
+  .file-drop input { display: none; }
+  #out { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>OptiMIMO</h1>
+    <p>Browser-based MIMO room-correction FIR solver (Pyodide / WebAssembly)</p>
+  </header>
+
+  <!-- Status -->
+  <div id="status-area"></div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="config">Configuration</div>
+    <div class="tab" data-tab="measurements">Measurements</div>
+    <div class="tab" data-tab="run">Run</div>
+    <div class="tab" data-tab="results">Results</div>
+  </div>
+
+  <!-- Config Tab -->
+  <div class="tab-content active" id="tab-config">
+    <div class="card">
+      <h2>System</h2>
+      <div class="form-row">
+        <div class="form-group"><label>Speakers</label><input type="number" id="cfg-speakers" value="3" min="1" max="16"></div>
+        <div class="form-group"><label>Mic Positions</label><input type="number" id="cfg-mics" value="3" min="1" max="16"></div>
+        <div class="form-group"><label>Input Channels</label><input type="number" id="cfg-inputs" value="2" min="1" max="16"></div>
+        <div class="form-group"><label>Sample Rate</label><input type="number" id="cfg-samplerate" value="48000" step="1"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Solver</h2>
+      <div class="form-row">
+        <div class="form-group"><label>Filter Taps</label><input type="number" id="cfg-taps" value="65536" step="1024"></div>
+        <div class="form-group"><label>FFT Size (0=auto)</label><input type="number" id="cfg-fft" value="0" step="1024"></div>
+        <div class="form-group"><label>Target Delay (ms)</label><input type="number" id="cfg-delay" value="140" step="10"></div>
+        <div class="form-group"><label>Max Boost (dB)</label><input type="number" id="cfg-boost" value="24" step="1"></div>
+        <div class="form-group"><label>Max Cut (dB)</label><input type="number" id="cfg-cut" value="24" step="1"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>IR Length (samples, 0=full)</label><input type="number" id="cfg-irlen" value="65536" step="1024" style="width:100px"></div>
+        <div class="form-group"><label>H Smoothing (1/n oct)</label><input type="number" id="cfg-hsmooth" value="3" step="1"></div>
+        <div class="form-group"><label>X Smoothing (1/n oct)</label><input type="number" id="cfg-xsmooth" value="3" step="1"></div>
+        <div class="form-group"><label>Fade Out (samples)</label><input type="number" id="cfg-fade" value="2048" step="64"></div>
+      </div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Filter taps must cover the target delay (taps ≥ delay_ms × sample_rate / 1000) or the inverse filter wraps and produces garbage. At 96 kHz, 65536 taps ≈ 683 ms.</p>
+    </div>
+
+    <div class="card">
+      <h2>Target</h2>
+      <div class="form-row">
+        <div class="form-group"><label>Mode</label>
+          <select id="cfg-target-mode"><option value="flat">Flat</option><option value="anchored">Anchored</option></select>
+        </div>
+        <div class="form-group"><label>Auto Level</label>
+          <select id="cfg-auto-level"><option value="true">Auto</option><option value="false">Manual</option></select>
+        </div>
+      </div>
+      <h3>House Curve (freq_hz, dB)</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Points</label><input type="text" id="cfg-curve" value="20,-3; 80,0; 20000,0" style="width:300px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Speaker Profiles</h2>
+      <div id="speaker-profiles"></div>
+      <button class="btn btn-secondary btn-sm" onclick="buildSpeakerProfiles()">Rebuild from speaker count</button>
+    </div>
+
+    <div class="card">
+      <h2>Input Routing</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Which speakers reproduce each input channel (comma-separated, 0-based). Primary is the anchor speaker for anchored target mode.</p>
+      <div id="input-routing"></div>
+      <button class="btn btn-secondary btn-sm" onclick="buildInputRouting()">Rebuild from input count</button>
+    </div>
+  </div>
+
+  <!-- Measurements Tab -->
+  <div class="tab-content" id="tab-measurements">
+    <div class="card">
+      <h2>Source</h2>
+      <div class="form-row">
+        <button class="btn btn-secondary" onclick="setInputSource('rew')" id="btn-src-rew">Import from REW</button>
+        <button class="btn btn-secondary" onclick="setInputSource('file')" id="btn-src-file">Upload WAV Files</button>
+        <button class="btn btn-secondary" onclick="setInputSource('synthetic')" id="btn-src-synth">Synthetic Test Data</button>
+      </div>
+    </div>
+
+    <!-- REW Import -->
+    <div class="card hidden" id="panel-rew">
+      <h2>REW Import</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Make sure REW is running with API enabled (Preferences → API → Start). The webapp proxies REW API requests to avoid CORS issues.</p>
+      <div class="form-row">
+        <div class="form-group" style="justify-content:flex-end"><button class="btn btn-sm" onclick="fetchRewMeasurements()">Fetch Measurements</button></div>
+      </div>
+      <div id="rew-measurements"></div>
+      <div id="rew-assignments"></div>
+      <button class="btn hidden" id="btn-rew-import" onclick="importFromRew()">Import Selected</button>
+    </div>
+
+    <!-- File Upload -->
+    <div class="card hidden" id="panel-file">
+      <h2>Upload WAV Files</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Upload one mono WAV per (speaker, mic) pair. Files are assigned in order.</p>
+      <div class="file-drop" id="file-drop">
+        <p>Drop WAV files here or click to browse</p>
+        <input type="file" id="file-input" multiple accept=".wav">
+      </div>
+      <div id="file-list"></div>
+    </div>
+
+    <!-- Synthetic -->
+    <div class="card hidden" id="panel-synthetic">
+      <h2>Synthetic Test Data</h2>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Generates synthetic room IRs with known peaks and modal tails. Matches the CLI smoke test.</p>
+      <div class="form-row">
+        <div class="form-group"><label>IR Length (samples)</label><input type="number" id="synth-irlen" value="32768" step="1024"></div>
+      </div>
+      <button class="btn" onclick="generateSynthetic()">Generate</button>
+      <div id="synth-status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Loaded Measurements</h2>
+      <div id="measurement-summary">No measurements loaded.</div>
+    </div>
+  </div>
+
+  <!-- Run Tab -->
+  <div class="tab-content" id="tab-run">
+    <div class="card">
+      <h2>Solve</h2>
+      <div id="run-summary"></div>
+      <div class="form-row" style="margin-top:12px">
+        <button class="btn" id="btn-solve" onclick="startSolve()">Run Solver</button>
+        <button class="btn btn-danger hidden" id="btn-cancel" onclick="cancelSolve()">Cancel</button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+        <div class="progress-label" id="progress-label">Ready</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- Results Tab -->
+  <div class="tab-content" id="tab-results">
+    <div class="card">
+      <h2>Results</h2>
+      <div id="results-content">No results yet. Run the solver first.</div>
+    </div>
+    <div class="card hidden" id="download-card">
+      <h2>Download</h2>
+      <div class="form-row">
+        <button class="btn btn-success" onclick="downloadFirs('wav')">Download FIRs (WAV)</button>
+        <button class="btn btn-success" onclick="downloadFirs('txt')">Download FIRs (TXT)</button>
+        <button class="btn btn-secondary" onclick="downloadDiagnostics()">Diagnostics (JSON)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="out"></div>
+<script src="app.js"></script>
+</body>
+</html>
