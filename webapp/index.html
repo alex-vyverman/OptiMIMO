@@ -97,12 +97,25 @@
   <!-- Config Tab -->
   <div class="tab-content active" id="tab-config">
     <div class="card">
+      <h2>Config File</h2>
+      <div class="form-row" style="align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cfg-file-input').click()">Load Config JSON…</button>
+        <button class="btn btn-secondary btn-sm" onclick="saveConfigFile()">Save Config JSON</button>
+        <input type="file" id="cfg-file-input" accept=".json" style="display:none" onchange="loadConfigFile(this.files[0]); this.value=''">
+        <span style="font-size:12px;color:var(--text-dim)">Desktop-format config JSON (e.g. config_testv2_laptop.json). Load populates the UI; solver keys without UI fields are kept and passed through.</span>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>System</h2>
       <div class="form-row">
         <div class="form-group"><label>Speakers</label><input type="number" id="cfg-speakers" value="3" min="1" max="16"></div>
         <div class="form-group"><label>Mic Positions</label><input type="number" id="cfg-mics" value="3" min="1" max="16"></div>
         <div class="form-group"><label>Input Channels</label><input type="number" id="cfg-inputs" value="2" min="1" max="16"></div>
         <div class="form-group"><label>Sample Rate</label><input type="number" id="cfg-samplerate" value="48000" step="1"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Mic Weights (comma-separated, empty = all 1.0)</label><input type="text" id="cfg-mic-weights" value="" style="width:280px" placeholder="1.0, 0.75, 0.6, …"></div>
       </div>
     </div>
 

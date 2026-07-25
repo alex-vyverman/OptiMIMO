@@ -10,8 +10,10 @@ let solving = false;
 let cancelBuffer = null; // SharedArrayBuffer for graceful cancellation
 let irData = null;        // Float64Array[] — one per (mic*speakers + speaker)
 let irShape = null;       // [numMics, numSpeakers, irLength]
+let irArrivals = null;    // [{mic, speaker, arrival_ms}] from REW import, else null
 let rewMeasurements = []; // from REW /measurements
 let solveResult = null;   // last solve result
+let configExtras = {};    // solver keys from a loaded config JSON that the UI doesn't expose
 
 // ============================================================
 // Tab switching
@@ -69,14 +71,16 @@ function getConfig() {
     return [f, d];
   }).filter(([f, d]) => !isNaN(f) && !isNaN(d));
 
-  // Speaker profiles
+  // Speaker profiles: UI fields win per key; loaded-config profile extras
+  // (e.g. effort_penalty_db) are preserved per speaker index.
   const profiles = {};
   for (let i = 0; i < speakers; i++) {
+    const extra = configExtras.speaker_profiles?.[String(i)] || {};
     const name = document.getElementById(`spk-name-${i}`)?.value || `Speaker ${i}`;
     const minHz = parseFloat(document.getElementById(`spk-min-${i}`)?.value || 20);
     const maxHz = parseFloat(document.getElementById(`spk-max-${i}`)?.value || 20000);
     const trans = parseFloat(document.getElementById(`spk-trans-${i}`)?.value || 10);
-    profiles[String(i)] = { name, min_hz: minHz, max_hz: maxHz, transition_hz: trans };
+    profiles[String(i)] = { ...extra, name, min_hz: minHz, max_hz: maxHz, transition_hz: trans };
   }
 
   // Input routing
@@ -93,7 +97,12 @@ function getConfig() {
     inputPrimary[String(i)] = val;
   }
 
-  const config = {
+  // Mic weights: UI field wins; then loaded config; then all-1.0
+  const micWeights = parseMicWeights(mics);
+
+  // Loaded-config solver keys the UI doesn't expose form the base; UI wins.
+  const config = { ...configExtras };
+  Object.assign(config, {
     num_speakers: speakers,
     num_mic_positions: mics,
     num_inputs: inputs,
@@ -105,23 +114,122 @@ function getConfig() {
     h_smoothing_fraction: hSmooth,
     x_smoothing_fraction: xSmooth,
     fade_out_samples: fade,
-    ir_length_samples: irLen > 0 ? irLen : undefined,
     target_mode: targetMode,
     auto_target_level: autoLevel,
     target_curve_points_db: curvePoints,
     speaker_profiles: profiles,
     input_speakers: inputSpeakers,
-    mic_weights: Array(mics).fill(1.0),
-    reference_band_hz: [20.0, 200.0],
-    authority_floor_db: -30.0,
-    enforce_row_sum_gain_cap: true,
+    mic_weights: micWeights || config.mic_weights || Array(mics).fill(1.0),
     output_format: "wav",
-  };
+  });
+  if (irLen > 0) config.ir_length_samples = irLen; else delete config.ir_length_samples;
+  if (config.reference_band_hz === undefined) config.reference_band_hz = [20.0, 200.0];
+  if (config.authority_floor_db === undefined) config.authority_floor_db = -30.0;
+  if (config.enforce_row_sum_gain_cap === undefined) config.enforce_row_sum_gain_cap = true;
   if (targetMode === "anchored") {
     config.input_primary_speaker = inputPrimary;
   }
-  if (fft > 0) config.fft_size = fft;
+  if (fft > 0) config.fft_size = fft; else delete config.fft_size;
   return config;
+}
+
+function parseMicWeights(mics) {
+  const raw = document.getElementById("cfg-mic-weights").value.trim();
+  if (!raw) return null;
+  const parts = raw.split(",").map(Number).filter((v) => !isNaN(v) && v >= 0);
+  if (parts.length === 0) return null;
+  while (parts.length < mics) parts.push(1.0);
+  return parts.slice(0, mics);
+}
+
+// Solver-relevant config keys that have no UI field. Stashed on JSON load
+// and merged into getConfig() so desktop configs round-trip faithfully.
+const EXTRA_CONFIG_KEYS = [
+  "anchor_phase_smoothing_fraction", "anchor_level_floor_db",
+  "enforce_diagonal_cut_floor", "enforce_final_gain_cap",
+  "profile_disable_threshold", "profile_transition_penalty",
+  "profile_disable_penalty", "null_regularization_strength",
+  "remove_denormals", "wrap_energy_warning_ratio", "target_level_linear",
+  "reference_band_hz", "authority_floor_db", "enforce_row_sum_gain_cap",
+];
+
+async function loadConfigFile(file) {
+  if (!file) return;
+  try {
+    const json = JSON.parse(await file.text());
+    applyConfigJson(json);
+    log(`Loaded config file ${file.name}`);
+    setStatus(`Loaded config from ${file.name}`, "success");
+  } catch (err) {
+    log(`Config load failed: ${err.message}`, "error");
+    setStatus(`Config load failed: ${err.message}`, "error");
+  }
+}
+
+function applyConfigJson(json) {
+  configExtras = {};
+  for (const k of EXTRA_CONFIG_KEYS) {
+    if (json[k] !== undefined) configExtras[k] = json[k];
+  }
+  if (json.speaker_profiles && typeof json.speaker_profiles === "object") {
+    configExtras.speaker_profiles = json.speaker_profiles;
+  }
+
+  const set = (id, v) => { if (v !== undefined && v !== null) document.getElementById(id).value = v; };
+  set("cfg-speakers", json.num_speakers);
+  set("cfg-mics", json.num_mic_positions);
+  set("cfg-inputs", json.num_inputs);
+  set("cfg-samplerate", json.sample_rate);
+  set("cfg-taps", json.filter_taps);
+  set("cfg-fft", json.fft_size ?? 0);
+  set("cfg-delay", json.target_delay_ms);
+  set("cfg-boost", json.max_boost_db);
+  set("cfg-cut", json.max_cut_db);
+  set("cfg-hsmooth", json.h_smoothing_fraction);
+  set("cfg-xsmooth", json.x_smoothing_fraction);
+  set("cfg-fade", json.fade_out_samples);
+  set("cfg-irlen", json.ir_length_samples ?? 0);
+  set("cfg-target-mode", json.target_mode);
+  set("cfg-auto-level", String(json.auto_target_level !== false));
+  set("cfg-mic-weights", Array.isArray(json.mic_weights) ? json.mic_weights.join(", ") : "");
+
+  if (Array.isArray(json.target_curve_points_db)) {
+    set("cfg-curve", json.target_curve_points_db.map((p) => `${p[0]},${p[1]}`).join("; "));
+  } else if (json.target_curve_file) {
+    log(`Note: config uses target_curve_file '${json.target_curve_file}' — paste the curve points manually`, "warn");
+  }
+
+  // Rebuild dynamic sections from (possibly new) counts, then populate
+  buildSpeakerProfiles();
+  buildInputRouting();
+  const n = parseInt(document.getElementById("cfg-speakers").value);
+  for (let i = 0; i < n; i++) {
+    const p = json.speaker_profiles?.[String(i)] ?? json.speaker_profiles?.[i];
+    if (!p) continue;
+    set(`spk-name-${i}`, p.name);
+    set(`spk-min-${i}`, p.min_hz);
+    set(`spk-max-${i}`, p.max_hz);
+    set(`spk-trans-${i}`, p.transition_hz);
+  }
+  const ni = parseInt(document.getElementById("cfg-inputs").value);
+  for (let i = 0; i < ni; i++) {
+    const spk = json.input_speakers?.[String(i)] ?? json.input_speakers?.[i];
+    if (Array.isArray(spk)) set(`input-spk-${i}`, spk.join(","));
+    const prim = json.input_primary_speaker?.[String(i)] ?? json.input_primary_speaker?.[i];
+    if (prim !== undefined) set(`input-primary-${i}`, prim);
+  }
+}
+
+function saveConfigFile() {
+  const config = getConfig();
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "optimimo_config.json";
+  a.click();
+  URL.revokeObjectURL(url);
+  log("Saved current configuration as optimimo_config.json");
 }
 
 // ============================================================
@@ -405,6 +513,17 @@ async function importFromRew() {
     irShape = [mics, speakers, finalLen];
     document.getElementById("cfg-samplerate").value = sampleRate;
 
+    // Record per-(mic, speaker) arrival times on the aligned IR timeline.
+    // The solver uses these (via config.measurements[].arrival_ms) to
+    // de-rotate H smoothing and the anchored target — far more reliable
+    // than argmax for subwoofers. offset+peakIdx is the peak position in
+    // the aligned array; cropIrData slices from sample 0, so no offset.
+    irArrivals = aligned.map((ir) => ({
+      mic: ir.mic,
+      speaker: ir.speaker,
+      arrival_ms: ((ir.offset + ir.peakIdx) / sampleRate) * 1000.0,
+    }));
+
     log(`Imported ${result.length} IRs, ${finalLen} samples each @ ${sampleRate} Hz`);
     cropIrData();
     const [, , effLen] = irShape;
@@ -484,6 +603,7 @@ async function handleFiles(files) {
 
   irData = result;
   irShape = [mics, speakers, maxLen];
+  irArrivals = null; // no reliable arrival info for manual files
   if (sampleRate) document.getElementById("cfg-samplerate").value = sampleRate;
 
   log(`Loaded ${result.length} files, ${maxLen} samples each @ ${sampleRate} Hz`);
@@ -600,6 +720,7 @@ function generateSynthetic() {
 
   irData = result;
   irShape = [mics, speakers, length];
+  irArrivals = null; // synthetic data has no measured arrivals
   log(`Generated ${result.length} synthetic IRs`);
   cropIrData();
   const [, , effLen] = irShape;
@@ -698,6 +819,7 @@ function startSolve() {
   // to low-frequency mud). Require margin; the pipeline default margins are
   // 10 ms (anchored) / 20 ms (flat).
   const config = getConfig();
+  if (irArrivals) config.measurements = irArrivals;
   const delaySamples = (config.target_delay_ms / 1000.0) * config.sample_rate;
   const minTaps = Math.ceil(delaySamples);
   if (config.filter_taps < minTaps) {
