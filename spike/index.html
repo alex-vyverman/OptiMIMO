@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OptiMIMO Pyodide Spike</title>
+<style>
+  body { font-family: monospace; max-width: 900px; margin: 2em auto; padding: 0 1em; background: #1a1a2e; color: #e0e0e0; }
+  h1 { color: #00d4ff; }
+  h2 { color: #7b68ee; margin-top: 1.5em; }
+  #log { background: #0d1117; border: 1px solid #30363d; padding: 1em; border-radius: 6px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+  #results { background: #0d1117; border: 1px solid #30363d; padding: 1em; border-radius: 6px; margin-top: 1em; }
+  .stage { color: #58a6ff; }
+  .timing { color: #7ee787; }
+  .error { color: #f85149; }
+  .warn { color: #d29922; }
+  .ok { color: #7ee787; }
+  table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
+  th, td { border: 1px solid #30363d; padding: 6px 10px; text-align: left; font-size: 13px; }
+  th { background: #161b22; color: #58a6ff; }
+  .bar { height: 18px; background: #238636; border-radius: 3px; transition: width 0.3s; }
+  .bar-bg { background: #21262d; border-radius: 3px; height: 18px; width: 100%; }
+  #progress-bar-container { margin: 1em 0; }
+  #status { font-size: 14px; margin: 0.5em 0; }
+</style>
+</head>
+<body>
+<h1>OptiMIMO Pyodide Solver Spike</h1>
+<p>Validates that the OptiMIMO MIMO solver runs in-browser via Pyodide (WebAssembly CPython + NumPy + SciPy).</p>
+
+<div id="status">Status: <span id="status-text">initializing...</span></div>
+<div id="progress-bar-container">
+  <div class="bar-bg"><div class="bar" id="progress-bar" style="width: 0%"></div></div>
+</div>
+
+<h2>Log</h2>
+<div id="log"></div>
+
+<h2>Results</h2>
+<div id="results">Waiting for solve to complete...</div>
+
+<!-- Hidden element for CDP scraping -->
+<div id="out" style="display:none;"></div>
+<div id="firs-b64" style="display:none;"></div>
+
+<script>
+const logEl = document.getElementById("log");
+const resultsEl = document.getElementById("results");
+const statusEl = document.getElementById("status-text");
+const progressBar = document.getElementById("progress-bar");
+const outEl = document.getElementById("out");
+
+function log(msg, cls = "") {
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function formatMs(ms) {
+  if (ms < 1000) return ms.toFixed(1) + " ms";
+  return (ms / 1000).toFixed(2) + " s";
+}
+
+const worker = new Worker("worker.js");
+
+worker.onmessage = (ev) => {
+  const msg = ev.data;
+
+  if (msg.type === "progress") {
+    if (msg.stage === "pyodide_boot") {
+      log(`Pyodide booted in ${formatMs(msg.boot_ms)}`, "timing");
+      statusEl.textContent = "loading packages...";
+    } else if (msg.stage === "packages_loaded") {
+      log(`numpy + scipy loaded in ${formatMs(msg.package_load_ms)}`, "timing");
+      statusEl.textContent = "loading optimimo...";
+    } else if (msg.stage === "optimimo_loaded") {
+      log(`optimimo unpacked in ${formatMs(msg.total_ms)}`, "timing");
+      statusEl.textContent = "solving...";
+    } else if (msg.stage === "solve_progress") {
+      const pct = Math.round((msg.fraction || 0) * 100);
+      progressBar.style.width = pct + "%";
+      statusEl.textContent = `solving: ${msg.stage} (${pct}%)`;
+    } else if (msg.stage === "stdout" || msg.stage === "stderr") {
+      log(msg.text, msg.stage === "stderr" ? "warn" : "");
+    } else {
+      log(`[${msg.stage}] ${JSON.stringify(msg)}`);
+    }
+  } else if (msg.type === "result") {
+    statusEl.textContent = "done";
+    progressBar.style.width = "100%";
+    displayResults(msg);
+  } else if (msg.type === "error") {
+    statusEl.textContent = "ERROR";
+    log("ERROR: " + msg.message, "error");
+    outEl.textContent = JSON.stringify({ error: msg.message });
+  }
+};
+
+function displayResults(msg) {
+  const s = msg.solve;
+  const stageMs = s.stage_ms || {};
+
+  let html = "<h3>Timing Summary</h3>";
+  html += "<table><tr><th>Phase</th><th>Duration</th></tr>";
+  html += `<tr><td>Pyodide boot</td><td>${formatMs(msg.boot_ms)}</td></tr>`;
+  html += `<tr><td>Package load (numpy+scipy)</td><td>${formatMs(msg.package_load_ms)}</td></tr>`;
+  html += `<tr><td>optimimo unpack</td><td>${formatMs(msg.optimimo_load_ms)}</td></tr>`;
+  html += `<tr><td><b>Total solve</b></td><td><b>${formatMs(s.total_ms)}</b></td></tr>`;
+  html += "</table>";
+
+  html += "<h3>Per-Stage Solve Breakdown</h3>";
+  html += "<table><tr><th>Stage</th><th>Duration</th><th>Progress</th></tr>";
+  const stageOrder = ["fft", "smooth_h", "target", "solve", "smooth_x", "firs", "done"];
+  for (const stage of stageOrder) {
+    if (stage in stageMs) {
+      html += `<tr><td>${stage}</td><td>${formatMs(stageMs[stage])}</td><td></td></tr>`;
+    }
+  }
+  for (const stage of Object.keys(stageMs)) {
+    if (!stageOrder.includes(stage)) {
+      html += `<tr><td>${stage}</td><td>${formatMs(stageMs[stage])}</td><td></td></tr>`;
+    }
+  }
+  html += "</table>";
+
+  html += "<h3>Solve Parameters</h3>";
+  html += `<table>`;
+  html += `<tr><td>FFT size</td><td>${s.fft_size}</td></tr>`;
+  html += `<tr><td>Filter taps</td><td>${s.filter_taps}</td></tr>`;
+  html += `<tr><td>FIR shape</td><td>${JSON.stringify(s.firs_shape)}</td></tr>`;
+  html += `<tr><td>FIR checksum (sum |x|)</td><td>${s.firs_checksum?.toExponential(6)}</td></tr>`;
+  html += `<tr><td>FIR max |x|</td><td>${s.firs_max?.toExponential(6)}</td></tr>`;
+  html += `<tr><td>Progress callbacks</td><td>${s.progress_count}</td></tr>`;
+  html += `</table>`;
+
+  resultsEl.innerHTML = html;
+
+  // Write machine-readable results for CDP scraping
+  const output = {
+    pyodide: {
+      boot_ms: msg.boot_ms,
+      package_load_ms: msg.package_load_ms,
+      optimimo_load_ms: msg.optimimo_load_ms,
+      solve_total_ms: s.total_ms,
+      solve_wall_ms: s.solve_wall_ms,
+      stage_ms: stageMs,
+      firs_checksum: s.firs_checksum,
+      firs_max: s.firs_max,
+      firs_shape: s.firs_shape,
+      fft_size: s.fft_size,
+      filter_taps: s.filter_taps,
+    },
+    status: "complete",
+  };
+  outEl.textContent = JSON.stringify(output);
+
+  // Write firs b64 to a separate element for parity comparison
+  if (s.firs_b64) {
+    const firsEl = document.getElementById("firs-b64");
+    if (firsEl) firsEl.textContent = s.firs_b64;
+  }
+  log("Results written to #out for scraping.", "ok");
+}
+
+log("Worker started, loading Pyodide...");
+</script>
+</body>
+</html>
