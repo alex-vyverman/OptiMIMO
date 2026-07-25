@@ -1,0 +1,13 @@
+{
+  "name": "optimimo-webapp-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CDP test harnesses for the OptiMIMO browser webapp",
+  "scripts": {
+    "parity": "node parity_test.js",
+    "test": "node parity_test.js"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.2"
+  }
+}
