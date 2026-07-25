@@ -789,10 +789,13 @@ function ensureWorker() {
       setStatus("Solve cancelled. Worker is ready for next run.", "warn");
     } else if (msg.type === "error") {
       solving = false;
+      estimating = false;
       document.getElementById("btn-solve").classList.remove("hidden");
       document.getElementById("btn-cancel").classList.add("hidden");
       log(`ERROR: ${msg.message}`, "error");
       setStatus(`Solve failed: ${msg.message}`, "error");
+    } else if (msg.type === "delay_estimate") {
+      handleDelayEstimate(msg.estimate);
     }
   };
   worker.onerror = (err) => {
@@ -930,8 +933,11 @@ function displayResults(msg) {
   document.getElementById("results-content").innerHTML = html;
   document.getElementById("download-card").classList.remove("hidden");
 
-  // Switch to Results tab
+  // Switch to Results tab first so canvases have layout when drawn
   document.querySelector('.tab[data-tab="results"]').click();
+
+  // Render plots (predicted vs target, filter magnitudes) if provided
+  renderPlots(msg.plots);
 
   // Write to hidden #out for CDP scraping
   document.getElementById("out").textContent = JSON.stringify({
@@ -941,6 +947,164 @@ function displayResults(msg) {
     firs_shape: msg.firs_shape,
     firs_checksum: msg.firs_checksum,
     diagnostics: d,
+  });
+}
+
+// ============================================================
+// Delay estimation — group-delay analysis via the worker
+// ============================================================
+let estimating = false;
+
+function estimateDelay() {
+  if (!irData || !irShape) {
+    setStatus("Load measurements first (Measurements tab)", "warn");
+    return;
+  }
+  if (solving || estimating) return;
+  ensureWorker();
+  if (!workerReady) {
+    setStatus("Waiting for Pyodide to boot...", "info");
+    const check = setInterval(() => {
+      if (workerReady) { clearInterval(check); estimateDelay(); }
+    }, 500);
+    return;
+  }
+  estimating = true;
+  setStatus("Estimating target delay from measured group delay...", "info");
+  log("Estimating target delay (group-delay analysis per speaker band)...");
+  const config = getConfig();
+  if (irArrivals) config.measurements = irArrivals;
+  worker.postMessage({ type: "estimate_delay", irData, irShape, config });
+}
+
+function handleDelayEstimate(e) {
+  estimating = false;
+  const rec = Math.ceil(e.recommended_ms);
+  document.getElementById("cfg-delay").value = rec;
+  log(`Delay estimate: worst group delay ${e.max_group_delay_ms.toFixed(1)} ms + ${e.margin_ms.toFixed(0)} ms ${e.target_mode}-mode margin → ${e.recommended_ms.toFixed(1)} ms; set ${rec} ms`);
+  if (e.h_smoothing_applied) log(`  (estimate reflects ${e.h_smoothing_fraction}/oct H smoothing)`);
+  for (const issue of e.issues || []) log(`  issue: ${issue}`, "warn");
+  if (e.constrained_by_fft) {
+    setStatus(`Recommended ${rec} ms exceeds the ${e.max_delay_budget_ms.toFixed(0)} ms budget from current FFT/taps — increase FFT size or reduce taps`, "warn");
+  } else {
+    setStatus(`Target delay set to ${rec} ms (worst group delay ${e.max_group_delay_ms.toFixed(1)} ms)`, "success");
+  }
+}
+
+// ============================================================
+// Plots — canvas line plots of predicted/target/filter magnitudes
+// ============================================================
+const PLOT_COLORS = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#bc8cff", "#39c5cf", "#ff9f43", "#ff6b81", "#7ee787", "#ffa198", "#a5d6ff", "#56d364"];
+const PLOT_X_TICKS = [10, 15, 20, 30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+const PLOT_X_LABELS = { 20: "20", 50: "50", 100: "100", 200: "200", 500: "500", 1000: "1k", 2000: "2k", 5000: "5k", 10000: "10k", 20000: "20k" };
+
+function renderPlots(plots) {
+  const container = document.getElementById("plots-container");
+  container.innerHTML = "";
+  if (!plots) return;
+  if (plots.error) { log(`Plot generation failed: ${plots.error}`, "warn"); return; }
+  const inputs = [...new Set(plots.curves.filter((c) => c.kind === "predicted").map((c) => c.input))].sort((a, b) => a - b);
+  for (const k of inputs) {
+    const predSeries = plots.curves
+      .filter((c) => c.input === k && (c.kind === "predicted" || c.kind === "target"))
+      .map((c) => ({ label: `${c.kind === "target" ? "target" : "pred"} mic ${c.mic}`, db: c.db, group: c.mic, dash: c.kind === "target" }));
+    container.appendChild(makePlotCard(`Predicted vs Target — input ${k}`, plots.freqs, predSeries));
+
+    const filtSeries = plots.curves
+      .filter((c) => c.input === k && c.kind === "filter")
+      .map((c) => ({ label: plots.speaker_names?.[c.speaker] ?? `spk ${c.speaker}`, db: c.db, group: c.speaker, dash: false }));
+    container.appendChild(makePlotCard(`Filter Magnitude — input ${k}`, plots.freqs, filtSeries));
+  }
+}
+
+function makePlotCard(title, freqs, series) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h2>${title}</h2>`;
+  const canvas = document.createElement("canvas");
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = "720px";
+  canvas.style.height = "260px";
+  card.appendChild(canvas);
+  drawLinePlot(canvas, freqs, series);
+  return card;
+}
+
+function drawLinePlot(canvas, freqs, series) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth || 720;
+  const H = canvas.clientHeight || 260;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  const padL = 44, padR = 8, padT = 8, padB = 22, legendH = Math.ceil(series.length / 4) * 13 + 4;
+  const plotW = W - padL - padR, plotH = H - padT - padB - legendH;
+  const f0 = freqs[0], f1 = freqs[freqs.length - 1];
+  const lf0 = Math.log10(f0), lf1 = Math.log10(f1);
+  const xOf = (f) => padL + ((Math.log10(f) - lf0) / (lf1 - lf0)) * plotW;
+
+  let yMin = Infinity, yMax = -Infinity;
+  for (const s of series) for (const v of s.db) { if (v < yMin) yMin = v; if (v > yMax) yMax = v; }
+  if (!isFinite(yMin)) { yMin = -60; yMax = 0; }
+  const yPad = Math.max(3, (yMax - yMin) * 0.08);
+  yMin -= yPad; yMax += yPad;
+  const yOf = (v) => padT + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+
+  const css = getComputedStyle(document.documentElement);
+  const colBorder = css.getPropertyValue("--border").trim() || "#30363d";
+  const colText = css.getPropertyValue("--text-dim").trim() || "#8b949e";
+
+  // Grid + x ticks
+  ctx.strokeStyle = colBorder; ctx.fillStyle = colText; ctx.lineWidth = 1;
+  ctx.font = "10px " + (css.getPropertyValue("--mono") || "monospace");
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const t of PLOT_X_TICKS) {
+    if (t < f0 || t > f1) continue;
+    const x = xOf(t);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
+    if (PLOT_X_LABELS[t]) ctx.fillText(PLOT_X_LABELS[t], x, padT + plotH + 5);
+  }
+  // Y ticks (nice step)
+  const range = yMax - yMin;
+  const step = [1, 2, 5, 10, 20, 50].find((s) => range / s <= 8) || 100;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = Math.ceil(yMin / step) * step; v <= yMax; v += step) {
+    const y = yOf(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+    ctx.fillText(String(Math.round(v)), padL - 4, y);
+  }
+  ctx.textAlign = "center";
+  ctx.fillText("Hz", padL + plotW / 2, H - 12);
+  ctx.save(); ctx.translate(10, padT + plotH / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("dB", 0, 0); ctx.restore();
+
+  // Curves
+  for (const s of series) {
+    ctx.strokeStyle = PLOT_COLORS[s.group % PLOT_COLORS.length];
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash(s.dash ? [5, 4] : []);
+    ctx.beginPath();
+    for (let i = 0; i < freqs.length; i++) {
+      const x = xOf(freqs[i]), y = yOf(s.db[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Legend (below plot, up to 4 columns)
+  const cols = 4, rowH = 13, colW = plotW / cols;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  series.forEach((s, i) => {
+    const cx = padL + (i % cols) * colW + 4, cy = padT + plotH + padB - 2 + Math.floor(i / cols) * rowH + rowH / 2;
+    ctx.strokeStyle = PLOT_COLORS[s.group % PLOT_COLORS.length];
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash(s.dash ? [4, 3] : []);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 14, cy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = colText;
+    ctx.fillText(s.label, cx + 18, cy);
   });
 }
 

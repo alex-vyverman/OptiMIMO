@@ -67,6 +67,20 @@ async function initPyodide() {
   postStatus("ready", 0, { boot_ms: bootMs, package_load_ms: pkgMs, optimimo_load_ms: optMs, numpy_version: numpyVersion });
 }
 
+// Write IR data into Pyodide's FS as a binary file (float64, mic-major).
+function writeIrData(irData, irShape) {
+  const [numMics, numSpeakers, irLength] = irShape;
+  const totalSamples = numMics * numSpeakers * irLength;
+  const flat = new Float64Array(totalSamples);
+  for (let m = 0; m < numMics; m++) {
+    for (let s = 0; s < numSpeakers; s++) {
+      const src = irData[m * numSpeakers + s];
+      flat.set(src, (m * numSpeakers + s) * irLength);
+    }
+  }
+  pyodide.FS.writeFile("/tmp/ir_data.bin", new Uint8Array(flat.buffer));
+}
+
 async function runSolve(msg) {
   const { irData, irShape, config } = msg;
   const [numMics, numSpeakers, irLength] = irShape;
@@ -80,16 +94,7 @@ async function runSolve(msg) {
     cancelView = null;
   }
 
-  // Write IR data into Pyodide's FS as a binary file, then load in Python
-  const totalSamples = numMics * numSpeakers * irLength;
-  const flat = new Float64Array(totalSamples);
-  for (let m = 0; m < numMics; m++) {
-    for (let s = 0; s < numSpeakers; s++) {
-      const src = irData[m * numSpeakers + s];
-      flat.set(src, (m * numSpeakers + s) * irLength);
-    }
-  }
-  pyodide.FS.writeFile("/tmp/ir_data.bin", new Uint8Array(flat.buffer));
+  writeIrData(irData, irShape);
 
   // Set up progress bridge — must be on globalThis so Python's `import js` can find it
   globalThis._postProgress = (stage, fraction) => {
@@ -184,6 +189,43 @@ else:
         "warnings": list(result.diagnostics.warnings),
     }
 
+    # Downsampled plot curves on a log-frequency grid (~240 points).
+    # predicted: |sum_s H[m,s] X[s,k]| per (mic, input); target: |Y[m,k]|;
+    # filter: |X[s,k]| per (speaker, input). Magnitudes are bin-mean then dB.
+    plots = None
+    try:
+        _freqs = result.freqs
+        _h, _y, _x = result.h_freq, result.y_freq, result.x_freq
+        _F, _M, _N = _h.shape
+        _K = _x.shape[2]
+        _npts = 240
+        _edges = np.logspace(np.log10(max(10.0, _freqs[1])), np.log10(_freqs[-1]), _npts + 1)
+        _centers = np.sqrt(_edges[:-1] * _edges[1:])
+        _idx = np.searchsorted(_freqs, _edges)
+        _eps = 1e-12
+        def _ds(mag):
+            out = np.zeros(_npts)
+            for b in range(_npts):
+                a, z = _idx[b], _idx[b + 1]
+                out[b] = mag[a:z].mean() if z > a else mag[min(a, _F - 1)]
+            return 20.0 * np.log10(out + _eps)
+        _curves = []
+        for k in range(_K):
+            for m in range(_M):
+                _pred = np.abs(np.sum(_h[:, m, :] * _x[:, :, k], axis=1))
+                _curves.append({"kind": "predicted", "mic": m, "input": k, "db": _ds(_pred).tolist()})
+                _curves.append({"kind": "target", "mic": m, "input": k, "db": _ds(np.abs(_y[:, m, k])).tolist()})
+        for k in range(_K):
+            for s in range(_N):
+                _curves.append({"kind": "filter", "speaker": s, "input": k, "db": _ds(np.abs(_x[:, s, k])).tolist()})
+        plots = {
+            "freqs": _centers.tolist(),
+            "curves": _curves,
+            "speaker_names": [str(p.name) for p in result.profiles],
+        }
+    except Exception as _plot_err:
+        plots = {"error": str(_plot_err)}
+
     _result_json = json.dumps({
         "cancelled": False,
         "total_ms": total_ms,
@@ -194,6 +236,7 @@ else:
         "fft_size": result.config.get("fft_size"),
         "filter_taps": result.config.get("filter_taps"),
         "diagnostics": diagnostics,
+        "plots": plots,
     })
 
 _result_json
@@ -213,6 +256,28 @@ _result_json
   return result;
 }
 
+async function runEstimate(msg) {
+  const { irData, irShape, config } = msg;
+  const [numMics, numSpeakers, irLength] = irShape;
+  writeIrData(irData, irShape);
+  const configJson = JSON.stringify(config);
+
+  const resultJson = pyodide.runPython(`
+import json
+import numpy as np
+
+ir_shape = (${numMics}, ${numSpeakers}, ${irLength})
+room_irs = np.fromfile("/tmp/ir_data.bin", dtype=np.float64).reshape(ir_shape)
+config = json.loads('''${configJson}''')
+sample_rate = int(config.get("sample_rate", 48000))
+
+from optimimo.core.delay_estimator import estimate_target_delay_ms
+_r = estimate_target_delay_ms(room_irs, sample_rate, config)
+json.dumps(_r)
+`);
+  return JSON.parse(resultJson);
+}
+
 onmessage = async (ev) => {
   const msg = ev.data;
   try {
@@ -227,6 +292,11 @@ onmessage = async (ev) => {
       } else {
         postResult(result);
       }
+    } else if (msg.type === "estimate_delay") {
+      if (!booted) await initPyodide();
+      postStatus("estimating", 0.5);
+      const estimate = await runEstimate(msg);
+      postMessage({ type: "delay_estimate", estimate });
     }
   } catch (err) {
     postError(`${err.message}\n${err.stack || ""}`);

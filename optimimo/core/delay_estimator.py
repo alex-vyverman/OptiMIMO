@@ -69,6 +69,34 @@ def suggest_target_delay_ms(
         - issues: human-readable caveats (missing measurements, etc.)
     """
     sample_rate, ir_matrix = load_measurement_matrix(config, base_dir)
+    return estimate_target_delay_ms(
+        ir_matrix,
+        sample_rate,
+        config,
+        quantile=quantile,
+        flat_margin_ms=flat_margin_ms,
+        anchored_margin_ms=anchored_margin_ms,
+        min_nfft=min_nfft,
+    )
+
+
+def estimate_target_delay_ms(
+    ir_matrix: np.ndarray,
+    sample_rate: int,
+    config: Mapping[str, Any],
+    *,
+    quantile: float = 0.99,
+    flat_margin_ms: float = 20.0,
+    anchored_margin_ms: float = 10.0,
+    min_nfft: int = 8192,
+) -> dict[str, Any]:
+    """Core estimator on an in-memory IR matrix (mics x speakers x samples).
+
+    Same computation as ``suggest_target_delay_ms`` but takes the IRs
+    directly, for callers that already hold them (e.g. the browser app).
+    ``config`` supplies speaker_profiles, target_mode, h_smoothing_fraction,
+    fft_size/filter_taps, and optionally ``measurements`` arrival entries.
+    """
     num_mics, num_speakers, ir_length = ir_matrix.shape
     arrivals = compute_measurement_arrivals(config, sample_rate)
 

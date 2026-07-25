@@ -125,6 +125,7 @@
         <div class="form-group"><label>Filter Taps</label><input type="number" id="cfg-taps" value="65536" step="1024"></div>
         <div class="form-group"><label>FFT Size (0=auto)</label><input type="number" id="cfg-fft" value="0" step="1024"></div>
         <div class="form-group"><label>Target Delay (ms)</label><input type="number" id="cfg-delay" value="140" step="10"></div>
+        <div class="form-group" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-secondary btn-sm" onclick="estimateDelay()" title="Estimate minimum target delay from measured group delay">Estimate</button></div>
         <div class="form-group"><label>Max Boost (dB)</label><input type="number" id="cfg-boost" value="24" step="1"></div>
         <div class="form-group"><label>Max Cut (dB)</label><input type="number" id="cfg-cut" value="24" step="1"></div>
       </div>
@@ -244,6 +245,7 @@
       <h2>Results</h2>
       <div id="results-content">No results yet. Run the solver first.</div>
     </div>
+    <div id="plots-container"></div>
     <div class="card hidden" id="download-card">
       <h2>Download</h2>
       <div class="form-row">
