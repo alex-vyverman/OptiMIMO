@@ -298,6 +298,7 @@ function buildInputRouting() {
 // Initialize on load
 buildSpeakerProfiles();
 buildInputRouting();
+loadRewProxyUrl();
 document.getElementById("cfg-speakers").addEventListener("change", () => { buildSpeakerProfiles(); buildInputRouting(); });
 document.getElementById("cfg-inputs").addEventListener("change", buildInputRouting);
 
@@ -320,9 +321,35 @@ function setInputSource(src) {
 // ============================================================
 // REW Import
 // ============================================================
+// REW API requests go through a proxy (serve.py) to avoid CORS/COEP and
+// Private Network Access blocks. Empty proxy URL = same origin (local
+// serve.py). On the hosted app, the user runs serve.py locally and sets
+// the URL (persisted in localStorage).
+function rewProxyBase() {
+  return (document.getElementById("rew-proxy-url")?.value || "").trim().replace(/\/+$/, "");
+}
+
+function saveRewProxyUrl() {
+  try { localStorage.setItem("rewProxyUrl", rewProxyBase()); } catch {}
+}
+
+function loadRewProxyUrl() {
+  try {
+    const v = localStorage.getItem("rewProxyUrl");
+    if (v) document.getElementById("rew-proxy-url").value = v;
+  } catch {}
+}
+
+function rewFetchHint(url) {
+  const onLoopback = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])/i.test(location.origin);
+  if (!onLoopback && !rewProxyBase()) {
+    return `Hosted mode: run "python3 serve.py 8878" on this machine and set the REW Proxy URL to http://127.0.0.1:8878.`;
+  }
+  return `Is REW running with API enabled, and the proxy reachable at ${url}?`;
+}
+
 async function fetchRewMeasurements() {
-  // Use the server proxy to avoid CORS/COEP issues with REW's API
-  const url = `/rew/measurements`;
+  const url = `${rewProxyBase()}/rew/measurements`;
   log(`Fetching REW measurements from ${url}...`);
   try {
     const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
@@ -345,7 +372,7 @@ async function fetchRewMeasurements() {
     renderRewAssignments();
   } catch (err) {
     log(`REW fetch failed: ${err.message}`, "error");
-    setStatus(`REW not reachable at ${url}. Is REW running with API enabled?`, "error");
+    setStatus(`REW not reachable. ${rewFetchHint(url)}`, "error");
   }
 }
 
@@ -403,7 +430,7 @@ async function importFromRew() {
     let maxLen = 0;
 
     for (const a of assignments) {
-      const url = `/rew/measurements/${encodeURIComponent(a.uuid)}/impulse-response?normalised=false`;
+      const url = `${rewProxyBase()}/rew/measurements/${encodeURIComponent(a.uuid)}/impulse-response?normalised=false`;
       const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${a.title}`);
       const data = await resp.json();
@@ -531,7 +558,7 @@ async function importFromRew() {
     updateMeasurementSummary();
   } catch (err) {
     log(`REW import failed: ${err.message}`, "error");
-    setStatus(`REW import failed: ${err.message}`, "error");
+    setStatus(`REW import failed: ${err.message}. ${rewFetchHint("")}`, "error");
   }
 }
 
