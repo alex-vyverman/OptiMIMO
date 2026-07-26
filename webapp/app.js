@@ -15,6 +15,11 @@ let rewMeasurements = []; // from REW /measurements
 let solveResult = null;   // last solve result
 let configExtras = {};    // solver keys from a loaded config JSON that the UI doesn't expose
 
+// REW Bridge extension (chrome.runtime messaging for hosted-app REW import).
+const REW_BRIDGE_EXT_ID = "moojndmfeecbgpfpkpnilhmcbioojpmo";
+// Chrome Web Store listing URL — set once the extension is published.
+const REW_BRIDGE_STORE_URL = "";
+
 // ============================================================
 // Tab switching
 // ============================================================
@@ -299,6 +304,7 @@ function buildInputRouting() {
 buildSpeakerProfiles();
 buildInputRouting();
 loadRewProxyUrl();
+updateRewBridgeStatus();
 document.getElementById("cfg-speakers").addEventListener("change", () => { buildSpeakerProfiles(); buildInputRouting(); });
 document.getElementById("cfg-inputs").addEventListener("change", buildInputRouting);
 
@@ -326,8 +332,6 @@ function setInputSource(src) {
 //   1. REW Proxy URL field set        → companion serve.py on this machine
 //   2. REW Bridge extension installed → chrome.runtime messaging (hosted app)
 //   3. Otherwise                      → same-origin /rew (local serve.py)
-const REW_BRIDGE_EXT_ID = "moojndmfeecbgpfpkpnilhmcbioojpmo";
-
 function rewProxyBase() {
   return (document.getElementById("rew-proxy-url")?.value || "").trim().replace(/\/+$/, "");
 }
@@ -345,6 +349,20 @@ function loadRewProxyUrl() {
 
 function rewBridgeAvailable() {
   return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.sendMessage;
+}
+
+function updateRewBridgeStatus() {
+  const el = document.getElementById("rew-bridge-status");
+  if (!el) return;
+  if (rewBridgeAvailable()) {
+    el.innerHTML = `<span style="color:var(--success)">REW Bridge extension: installed</span>`;
+    return;
+  }
+  const store = REW_BRIDGE_STORE_URL
+    ? `<a href="${REW_BRIDGE_STORE_URL}" target="_blank" rel="noopener">Install from the Chrome Web Store</a> (recommended)`
+    : `Chrome Web Store listing coming soon`;
+  el.innerHTML = `REW Bridge extension: not detected — ${store}; ` +
+    `or <a href="extension.zip">download extension.zip</a>, unzip, enable Developer mode in chrome://extensions, and "Load unpacked".`;
 }
 
 async function rewFetchJson(path) {

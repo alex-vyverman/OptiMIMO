@@ -187,6 +187,7 @@
         <div class="form-group"><label>REW Proxy URL (empty = extension / same origin)</label><input type="text" id="rew-proxy-url" placeholder="http://127.0.0.1:8878" style="width:220px" onchange="saveRewProxyUrl()"></div>
         <div class="form-group" style="justify-content:flex-end"><button class="btn btn-sm" onclick="fetchRewMeasurements()">Fetch Measurements</button></div>
       </div>
+      <div id="rew-bridge-status" style="font-size:12px;margin-bottom:8px"></div>
       <div id="rew-measurements"></div>
       <div id="rew-assignments"></div>
       <button class="btn hidden" id="btn-rew-import" onclick="importFromRew()">Import Selected</button>

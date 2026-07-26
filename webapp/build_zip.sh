@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build a zip of the optimimo package for Pyodide to load in the webapp.
-# Excludes gui/, __pycache__, .DS_Store, assets/ (not needed for the solver core).
+# Build the webapp's two zip artifacts:
+#   webapp/optimimo.zip   — the optimimo package for Pyodide to load
+#   webapp/extension.zip  — the REW Bridge extension, offered as a download
+#                           on the Measurements page (dev-mode stopgap until
+#                           the Chrome Web Store listing exists)
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -13,3 +16,8 @@ zip -r webapp/optimimo.zip optimimo/ \
   -x "optimimo/assets/*" \
   -x "optimimo/__main__.py"
 echo "Built webapp/optimimo.zip"
+# extension.zip holds the extension at the zip root so users can unzip and
+# point "Load unpacked" straight at the folder.
+(cd webapp/extension && zip -r ../extension.zip . -x ".DS_Store" "./.DS_Store")
+echo "Built webapp/extension.zip"
+
