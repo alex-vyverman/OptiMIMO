@@ -26,3 +26,6 @@ __pycache__/
 
 # Node test dependencies
 /webapp/node_modules/
+
+# Chrome for Testing binaries (npx @puppeteer/browsers)
+/webapp/chrome/

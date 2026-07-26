@@ -321,10 +321,13 @@ function setInputSource(src) {
 // ============================================================
 // REW Import
 // ============================================================
-// REW API requests go through a proxy (serve.py) to avoid CORS/COEP and
-// Private Network Access blocks. Empty proxy URL = same origin (local
-// serve.py). On the hosted app, the user runs serve.py locally and sets
-// the URL (persisted in localStorage).
+// REW API requests can reach the local REW instance three ways, tried in
+// order:
+//   1. REW Proxy URL field set        → companion serve.py on this machine
+//   2. REW Bridge extension installed → chrome.runtime messaging (hosted app)
+//   3. Otherwise                      → same-origin /rew (local serve.py)
+const REW_BRIDGE_EXT_ID = "moojndmfeecbgpfpkpnilhmcbioojpmo";
+
 function rewProxyBase() {
   return (document.getElementById("rew-proxy-url")?.value || "").trim().replace(/\/+$/, "");
 }
@@ -340,21 +343,45 @@ function loadRewProxyUrl() {
   } catch {}
 }
 
-function rewFetchHint(url) {
-  const onLoopback = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])/i.test(location.origin);
-  if (!onLoopback && !rewProxyBase()) {
-    return `Hosted mode: run "python3 serve.py 8878" on this machine and set the REW Proxy URL to http://127.0.0.1:8878.`;
+function rewBridgeAvailable() {
+  return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.sendMessage;
+}
+
+async function rewFetchJson(path) {
+  const base = rewProxyBase();
+  if (base) {
+    const resp = await fetch(`${base}/rew${path}`, { signal: AbortSignal.timeout(30000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
   }
-  return `Is REW running with API enabled, and the proxy reachable at ${url}?`;
+  if (rewBridgeAvailable()) {
+    const resp = await Promise.race([
+      chrome.runtime.sendMessage(REW_BRIDGE_EXT_ID, { type: "rew_fetch", path }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("REW Bridge timeout")), 30000)),
+    ]);
+    if (!resp) throw new Error("REW Bridge extension not responding");
+    if (!resp.ok) throw new Error(resp.error || `HTTP ${resp.status} from REW`);
+    return JSON.parse(resp.body);
+  }
+  const resp = await fetch(`/rew${path}`, { signal: AbortSignal.timeout(30000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+function rewFetchHint() {
+  const onLoopback = /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[::1\])/i.test(location.origin);
+  if (!onLoopback && !rewProxyBase() && !rewBridgeAvailable()) {
+    return 'Install the OptiMIMO REW Bridge extension (webapp/extension), or run "python3 serve.py 8878" and set the REW Proxy URL.';
+  }
+  return "Is REW running with API enabled?";
 }
 
 async function fetchRewMeasurements() {
-  const url = `${rewProxyBase()}/rew/measurements`;
-  log(`Fetching REW measurements from ${url}...`);
+  const base = rewProxyBase();
+  const via = base ? base : rewBridgeAvailable() ? "REW Bridge extension" : "same-origin proxy";
+  log(`Fetching REW measurements via ${via}...`);
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
+    const data = await rewFetchJson("/measurements");
     rewMeasurements = [];
     for (const [idx, summary] of Object.entries(data)) {
       if (!summary.uuid) continue;
@@ -372,7 +399,7 @@ async function fetchRewMeasurements() {
     renderRewAssignments();
   } catch (err) {
     log(`REW fetch failed: ${err.message}`, "error");
-    setStatus(`REW not reachable. ${rewFetchHint(url)}`, "error");
+    setStatus(`REW not reachable. ${rewFetchHint()}`, "error");
   }
 }
 
@@ -430,10 +457,8 @@ async function importFromRew() {
     let maxLen = 0;
 
     for (const a of assignments) {
-      const url = `${rewProxyBase()}/rew/measurements/${encodeURIComponent(a.uuid)}/impulse-response?normalised=false`;
-      const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${a.title}`);
-      const data = await resp.json();
+      const data = await rewFetchJson(`/measurements/${encodeURIComponent(a.uuid)}/impulse-response?normalised=false`)
+        .catch((err) => { throw new Error(`${err.message} for ${a.title}`); });
       const encoded = data.data || data.Data;
       if (!encoded) throw new Error(`No IR data for ${a.title}`);
 
@@ -558,7 +583,7 @@ async function importFromRew() {
     updateMeasurementSummary();
   } catch (err) {
     log(`REW import failed: ${err.message}`, "error");
-    setStatus(`REW import failed: ${err.message}. ${rewFetchHint("")}`, "error");
+    setStatus(`REW import failed: ${err.message}. ${rewFetchHint()}`, "error");
   }
 }
 
