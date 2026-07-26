@@ -17,7 +17,7 @@ zip -r webapp/optimimo.zip optimimo/ \
   -x "optimimo/__main__.py"
 echo "Built webapp/optimimo.zip"
 # extension.zip holds the extension at the zip root so users can unzip and
-# point "Load unpacked" straight at the folder.
-(cd webapp/extension && zip -r ../extension.zip . -x ".DS_Store" "./.DS_Store")
+# point "Load unpacked" straight at the folder. Docs (*.md) are excluded.
+(cd webapp/extension && zip -r ../extension.zip . -x ".DS_Store" "./.DS_Store" "*.md")
 echo "Built webapp/extension.zip"
 
