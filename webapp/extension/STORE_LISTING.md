@@ -1,5 +1,8 @@
 # Chrome Web Store listing — OptiMIMO REW Bridge
 
+- Extension ID: `oachlggjgkbbahocplendbppodahmpid`
+- Listing URL: https://chromewebstore.google.com/detail/oachlggjgkbbahocplendbppodahmpid
+
 ## Short summary (max 132 chars)
 
 Connects optimimo.app to REW (Room EQ Wizard) on your computer, so you can import acoustic measurements directly in the browser.

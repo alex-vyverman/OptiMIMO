@@ -16,14 +16,11 @@ let solveResult = null;   // last solve result
 let configExtras = {};    // solver keys from a loaded config JSON that the UI doesn't expose
 
 // REW Bridge extension (chrome.runtime messaging for hosted-app REW import).
-// This MUST be the Chrome Web Store-assigned ID: after the first dashboard
-// upload, copy the item's ID (shown in the dashboard / listing URL) here.
-// The current value was derived from a local dev key and is a placeholder
-// until the store ID exists. For unpacked dev testing, paste the ID shown
-// at chrome://extensions instead.
-const REW_BRIDGE_EXT_ID = "moojndmfeecbgpfpkpnilhmcbioojpmo";
-// Chrome Web Store listing URL — set once the extension is published.
-const REW_BRIDGE_STORE_URL = "";
+// This is the Chrome Web Store-assigned ID (dashboard, first upload). For
+// unpacked dev testing, paste the ID shown at chrome://extensions instead.
+const REW_BRIDGE_EXT_ID = "oachlggjgkbbahocplendbppodahmpid";
+// Chrome Web Store listing URL — live once the review is published.
+const REW_BRIDGE_STORE_URL = "https://chromewebstore.google.com/detail/oachlggjgkbbahocplendbppodahmpid";
 
 // ============================================================
 // Tab switching
