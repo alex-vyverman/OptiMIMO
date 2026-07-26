@@ -3,6 +3,19 @@
 - Extension ID: `oachlggjgkbbahocplendbppodahmpid`
 - Listing URL: https://chromewebstore.google.com/detail/oachlggjgkbbahocplendbppodahmpid
 
+## Dev testing (unpacked)
+
+The store rejects manifests with a `key` field, so `manifest.json` has
+none and unpacked builds get an unstable path-derived ID. For a stable
+dev ID (`moojndmfeecbgpfpkpnilhmcbioojpmo`, in the webapp's fallback
+list), copy `manifest.dev.json` over `manifest.json` before "Load
+unpacked":
+
+    cp manifest.dev.json manifest.json
+
+Restore (`git checkout -- manifest.json`) before rebuilding the store
+zip; `build_zip.sh` excludes `manifest.dev.json` either way.
+
 ## Short summary (max 132 chars)
 
 Connects optimimo.app to REW (Room EQ Wizard) on your computer, so you can import acoustic measurements directly in the browser.

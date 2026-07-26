@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "OptiMIMO REW Bridge (dev)",
+  "version": "1.0.0",
+  "description": "Lets optimimo.app read measurements from the REW (Room EQ Wizard) API running on this computer. Dev build with a fixed key for a stable unpacked ID.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA03PuLZxrcFZdfb93LRHz6jBDOIn9QjOOJF3+yed7leAOgicFMHXdKQ2mQNw9Qot+4g4PfJSUXzeJYDhNFfUqabpmTblLtPVl7IkSWpwMM4emYKv37Gwe7bce1OpQKxdl2m5RyHjs1rCUc9QCR+4atVbM6v4PE+1z4nrGLBDA92Q9CPp2uTzhIff+0mftIVOqFeWsIJEFNBSZKAArlluLkhps/QqSpfANvUgWXmyNPxH057Yk2cT6SSEQCTBPUYw2zreby1guSO7AauY4SPYNppz5kHss9iQcFnic1jujOgu/r5QbeS8gPpCJVvl13r/H31CGD7OgUALXU7JO1DHbpQIDAQAB",
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:4735/*",
+    "http://localhost:4735/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "externally_connectable": {
+    "matches": [
+      "https://optimimo.app/*",
+      "https://www.optimimo.app/*",
+      "http://127.0.0.1/*",
+      "http://localhost/*"
+    ]
+  }
+}

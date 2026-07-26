@@ -16,9 +16,14 @@ let solveResult = null;   // last solve result
 let configExtras = {};    // solver keys from a loaded config JSON that the UI doesn't expose
 
 // REW Bridge extension (chrome.runtime messaging for hosted-app REW import).
-// This is the Chrome Web Store-assigned ID (dashboard, first upload). For
-// unpacked dev testing, paste the ID shown at chrome://extensions instead.
-const REW_BRIDGE_EXT_ID = "oachlggjgkbbahocplendbppodahmpid";
+// Tried in order: the Chrome Web Store build, then the dev build (fixed key
+// in manifest.dev.json → stable unpacked ID). For ad-hoc unpacked testing
+// without manifest.dev.json, paste the ID from chrome://extensions here.
+const REW_BRIDGE_EXT_IDS = [
+  "oachlggjgkbbahocplendbppodahmpid", // Chrome Web Store
+  "moojndmfeecbgpfpkpnilhmcbioojpmo", // dev build (manifest.dev.json)
+];
+let rewBridgeActiveId = null; // which ID last connected (status display)
 // Chrome Web Store listing URL — live once the review is published.
 const REW_BRIDGE_STORE_URL = "https://chromewebstore.google.com/detail/oachlggjgkbbahocplendbppodahmpid";
 
@@ -357,7 +362,8 @@ function updateRewBridgeStatus() {
   const el = document.getElementById("rew-bridge-status");
   if (!el) return;
   if (rewBridgeAvailable()) {
-    el.innerHTML = `<span style="color:var(--success)">REW Bridge extension: installed</span>`;
+    const which = rewBridgeActiveId === REW_BRIDGE_EXT_IDS[0] ? "store" : rewBridgeActiveId === REW_BRIDGE_EXT_IDS[1] ? "dev" : null;
+    el.innerHTML = `<span style="color:var(--success)">REW Bridge extension: installed${which ? ` (${which} build)` : ""}</span>`;
     return;
   }
   const store = REW_BRIDGE_STORE_URL
@@ -375,13 +381,25 @@ async function rewFetchJson(path) {
     return resp.json();
   }
   if (rewBridgeAvailable()) {
-    const resp = await Promise.race([
-      chrome.runtime.sendMessage(REW_BRIDGE_EXT_ID, { type: "rew_fetch", path }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("REW Bridge timeout")), 30000)),
-    ]);
-    if (!resp) throw new Error("REW Bridge extension not responding");
-    if (!resp.ok) throw new Error(resp.error || `HTTP ${resp.status} from REW`);
-    return JSON.parse(resp.body);
+    let lastErr = null;
+    for (const id of REW_BRIDGE_EXT_IDS) {
+      let resp;
+      try {
+        resp = await Promise.race([
+          chrome.runtime.sendMessage(id, { type: "rew_fetch", path }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("REW Bridge timeout")), 30000)),
+        ]);
+      } catch (err) {
+        lastErr = err; // connection failure (absent/other build) → try next ID
+        continue;
+      }
+      if (!resp) { lastErr = new Error("REW Bridge extension not responding"); continue; }
+      rewBridgeActiveId = id;
+      // The bridge answered; a REW-level failure is not an ID problem.
+      if (!resp.ok) throw new Error(resp.error || `HTTP ${resp.status} from REW`);
+      return JSON.parse(resp.body);
+    }
+    throw lastErr || new Error("REW Bridge extension not responding");
   }
   const resp = await fetch(`/rew${path}`, { signal: AbortSignal.timeout(30000) });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -416,6 +434,7 @@ async function fetchRewMeasurements() {
     }
     rewMeasurements.sort((a, b) => parseInt(a.index) - parseInt(b.index));
     log(`Found ${rewMeasurements.length} REW measurements`);
+    updateRewBridgeStatus();
     renderRewAssignments();
   } catch (err) {
     log(`REW fetch failed: ${err.message}`, "error");
