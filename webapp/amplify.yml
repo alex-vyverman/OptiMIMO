@@ -1,0 +1,28 @@
+# AWS Amplify Hosting config — auto-deploy the webapp on every push to main.
+# The app is fully static; the only build step is packaging the optimimo
+# Python package for Pyodide (gitignored artifact, built here in CI).
+version: 1
+applications:
+  - appRoot: webapp
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - bash build_zip.sh
+        build:
+          commands: []
+      artifacts:
+        baseDirectory: /
+        files:
+          - '**/*'
+          - '!node_modules/**/*'
+      cache:
+        paths: []
+    # Required for SharedArrayBuffer (graceful solve cancellation).
+    customHeaders:
+      - pattern: '**/*'
+        headers:
+          - key: 'Cross-Origin-Opener-Policy'
+            value: 'same-origin'
+          - key: 'Cross-Origin-Embedder-Policy'
+            value: 'require-corp'
